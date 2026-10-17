@@ -1,0 +1,17 @@
+/node_modules/
+/.work/
+/.tools/
+/target/
+/ui/dist/
+/src-tauri/gen/
+/src-tauri/resources/bin/
+/src-tauri/resources/offline-engine.json
+/src-tauri/resources/notices/dependencies/
+/src-tauri/resources/notices/ffmpeg/
+*.log
+.env
+.env.*
+*.p12
+*.pfx
+*.key
+**/__pycache__/

@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"main","description":"Only the main local UI may access pickers and destroy its own window after quit confirmation.","windows":["main"],"permissions":["core:default","core:window:allow-destroy","dialog:allow-open","dialog:allow-confirm"]}

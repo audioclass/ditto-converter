@@ -1,0 +1,9 @@
+# Bash and interpreter scripts must not become CRLF on Git for Windows.
+*.sh text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.rs text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.png binary

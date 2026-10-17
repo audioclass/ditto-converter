@@ -1,0 +1,170 @@
+name: Native Windows and Apple Silicon
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            runner: windows-2025
+            platform: win32
+            arch: x64
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            icon: icon.ico
+          - name: macOS Apple Silicon
+            runner: macos-15
+            platform: darwin
+            arch: arm64
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+            icon: icon.icns
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: '0'
+      RUST_BACKTRACE: '1'
+      DITTO_BUILD_JOBS: '3'
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      MSYSTEM: UCRT64
+      CHERE_INVOKING: '1'
+      MSYS2_PATH_TYPE: inherit
+    steps:
+      - name: Check out source without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, resolved via GitHub commits API
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install pinned Node (no cache)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.21.0'
+          check-latest: false
+      - name: Assert real native OS/architecture and contain build state
+        run: node scripts/ci/native.mjs bootstrap '${{ matrix.platform }}' '${{ matrix.arch }}'
+      - name: Install locked UI and build dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install repository-pinned Rust, fmt and clippy
+        run: |
+          $toolchain = (Select-String -Path rust-toolchain.toml -Pattern '^channel = "([^"]+)"').Matches.Groups[1].Value
+          if (-not $toolchain) { throw 'Missing pinned Rust toolchain' }
+          rustup toolchain install $toolchain --profile minimal --component rustfmt --component clippy --target '${{ matrix.target }}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default $toolchain
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $rustInfo = rustc -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $rustInfo
+          if (-not ($rustInfo -contains 'host: ${{ matrix.target }}')) { throw 'Rust host is not the expected native target' }
+      - name: Update preinstalled MSYS2 core in its own shell
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Test-Path 'C:\msys64\usr\bin\bash.exe')) { throw 'Expected standard-runner MSYS2 missing' }
+          & C:\msys64\usr\bin\bash.exe -lc 'pacman --noconfirm -Syuu'
+          exit $LASTEXITCODE
+      - name: Update MSYS2 and install runner-only compiler and full fixture generator
+        if: runner.os == 'Windows'
+        run: |
+          & C:\msys64\usr\bin\bash.exe -lc 'pacman --noconfirm -Syuu'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & C:\msys64\usr\bin\bash.exe -lc 'pacman --noconfirm -S --needed make diffutils tar curl xz mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils mingw-w64-ucrt-x86_64-ffmpeg'
+          exit $LASTEXITCODE
+      - name: Install runner-only macOS full fixture generator
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ffmpeg
+          brew list --versions > .work/ci/evidence/homebrew-packages.txt
+          node scripts/ci/native.mjs fixture "$(brew --prefix)/bin/ffmpeg"
+      - name: Validate Windows full fixture generator (not shipped)
+        if: runner.os == 'Windows'
+        run: node scripts/ci/native.mjs fixture C:\msys64\ucrt64\bin\ffmpeg.exe
+      - name: Compile hash-pinned scoped LGPL engine natively (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          & C:\msys64\usr\bin\bash.exe --noprofile --norc -e scripts/ci/build-ffmpeg.sh
+          exit $LASTEXITCODE
+      - name: Compile hash-pinned scoped LGPL engine natively (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/ci/build-ffmpeg.sh
+      - name: Stage and audit exact native offline pair
+        run: |
+          node scripts/ci/native.mjs stage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/verify-bundle.mjs
+      - name: Prepare native icon/config and frontend before desktop checks
+        run: |
+          npm exec -- tauri icon src-tauri/icons/icon.png --output .work/ci/icons
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/ci/native.mjs prepare
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          exit $LASTEXITCODE
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Locked Rust clippy including desktop, excluding smoke
+        run: cargo clippy --workspace --all-targets --features desktop --locked -- -D warnings
+      - name: Locked native Rust workspace tests including full audio corpus
+        run: |
+          cargo test --workspace --features desktop --locked -- --nocapture 2>&1 | Tee-Object .work/ci/evidence/rust-tests.txt
+          exit $LASTEXITCODE
+      - name: UI and packaging-contract tests
+        run: |
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs
+          exit $LASTEXITCODE
+      - name: Inventory dependencies and stage available third-party notices
+        run: node scripts/ci/native.mjs inventories
+      - name: Build unsigned native installer/app/disk image without smoke
+        run: |
+          # File config avoids JSON quoting loss through npm.cmd on Windows.
+          npm run build:desktop -- --ci --no-sign --bundles '${{ matrix.bundles }}' --config .work/ci/tauri-native.json -- --locked
+          exit $LASTEXITCODE
+      - name: Verify expected packages and assemble binaries WITH LGPL source
+        run: node scripts/ci/native.mjs collect
+      # Paired unsigned test packages/source: owner-authorized repository variable.
+      # Fork PRs may test code but may not publish native packages.
+      - name: Upload paired native packages, corresponding source and notices
+        if: github.event_name != 'pull_request' && vars.DITTO_NATIVE_PACKAGE_UPLOAD_AUTHORIZED == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ditto-native-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_attempt }}
+          path: .work/ci/deliverables/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 6
+      - name: Preserve scoped build diagnostics, never an unpaired binary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ditto-diagnostics-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_attempt }}
+          path: |
+            .work/ci/evidence/
+            .work/ci/ffmpeg/evidence/
+          retention-days: 1
+          if-no-files-found: warn
+          compression-level: 6

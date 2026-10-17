@@ -1,0 +1,27 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>TEST ONLY · native IPC smoke</title><div id="app"></div><script type="module">
+// TEST FIXTURES ONLY. Not imported by the application or its production build.
+import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
+window.isTauri = true;
+mockWindows('main');
+const job = (id, position, title, state = 'queued') => ({id,position,title,state,source:{kind:'local',path:'/fixtures/input.wav'},duration:90,trim_start:0,trim_end:null,selected:true,progress:null,error:null,output:null});
+const state = {jobs:[job('second',2,'Second fixture'),job('first',1,'<unsafe> & first fixture'),job('failed',3,'Failed fixture','failed')],output_dir:'/fixtures/export',running:false,online_available:true,component_status:'Available (test fixture)'};
+state.jobs[2].error = 'Fixture conversion error';
+window.smokeCalls = [];
+mockIPC((command,args) => {
+  window.smokeCalls.push({command,args});
+  if(command === 'snapshot') return structuredClone(state);
+  if(command === 'update_job') { Object.assign(state.jobs.find(j=>j.id===args.id),args); return; }
+  if(command === 'remove_job') { state.jobs=state.jobs.filter(j=>j.id!==args.id); return; }
+  if(command === 'retry_job') { state.jobs.find(j=>j.id===args.id).state='queued'; return; }
+  if(command === 'start_queue') { state.running=true;state.jobs[0].state='converting';state.jobs[0].progress=.42;return; }
+  if(command === 'cancel_job') { state.jobs.find(j=>j.id===args.id).state='cancelled'; state.running=false;return; }
+  if(command === 'search') return [{title:'Search fixture',url:'https://example.invalid/test',provider:'youtube',duration:12,position:1,available:true}];
+  if(command === 'add_online') { state.jobs.push({...job('online',4,args.entries[0].title),source:{kind:'online',provider:'youtube',url:'https://example.invalid/test'}});return; }
+  if(command === 'component_info') return {status:'fixture'};
+  if(command === 'plugin:dialog|open') return args.options.directory?'/fixtures/export':['/fixtures/input.wav'];
+  if(command.startsWith('plugin:')) return null;
+  throw new Error(`Unexpected smoke IPC command: ${command}`);
+},{shouldMockEvents:true});
+await import('../src/main.ts');
+window.smokeState = state;
+</script></html>

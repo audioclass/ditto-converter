@@ -1,0 +1,112 @@
+[
+  {
+    "platform": "x86_64-unknown-linux-gnu",
+    "tuple_id": "ytdlp-2026.08.19_deno-2.9.7",
+    "yt_dlp": {
+      "version": "2026.08.19",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux",
+      "asset_id": 521488856,
+      "length": 40446224,
+      "sha256": "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a",
+      "filename": "yt-dlp",
+      "archive": "raw"
+    },
+    "deno": {
+      "version": "2.9.7",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip",
+      "asset_id": 568461950,
+      "length": 41596794,
+      "sha256": "c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490",
+      "filename": "deno",
+      "archive": "zip"
+    }
+  },
+  {
+    "platform": "aarch64-unknown-linux-gnu",
+    "tuple_id": "ytdlp-2026.08.19_deno-2.9.7",
+    "yt_dlp": {
+      "version": "2026.08.19",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux_aarch64",
+      "asset_id": 521488871,
+      "length": 40167448,
+      "sha256": "b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc",
+      "filename": "yt-dlp",
+      "archive": "raw"
+    },
+    "deno": {
+      "version": "2.9.7",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-unknown-linux-gnu.zip",
+      "asset_id": 568418344,
+      "length": 39821318,
+      "sha256": "c832298b1ad4422481334855f6003e0f54145762c5a134f20a489511d2f65bbf",
+      "filename": "deno",
+      "archive": "zip"
+    }
+  },
+  {
+    "platform": "x86_64-pc-windows-msvc",
+    "tuple_id": "ytdlp-2026.08.19_deno-2.9.7",
+    "yt_dlp": {
+      "version": "2026.08.19",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+      "asset_id": 521488854,
+      "length": 17840399,
+      "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+      "filename": "yt-dlp.exe",
+      "archive": "raw"
+    },
+    "deno": {
+      "version": "2.9.7",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip",
+      "asset_id": 568431369,
+      "length": 42630221,
+      "sha256": "a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238",
+      "filename": "deno.exe",
+      "archive": "zip"
+    }
+  },
+  {
+    "platform": "aarch64-apple-darwin",
+    "tuple_id": "ytdlp-2026.08.19_deno-2.9.7",
+    "yt_dlp": {
+      "version": "2026.08.19",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos",
+      "asset_id": 521488882,
+      "length": 37146048,
+      "sha256": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202",
+      "filename": "yt-dlp",
+      "archive": "raw"
+    },
+    "deno": {
+      "version": "2.9.7",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-apple-darwin.zip",
+      "asset_id": 568561366,
+      "length": 38469316,
+      "sha256": "5cd46d6268f6f78f5d88bdc7159d20bd44cdaa4b3303474839f87ec6fe7ae25c",
+      "filename": "deno",
+      "archive": "zip"
+    }
+  },
+  {
+    "platform": "x86_64-apple-darwin",
+    "tuple_id": "ytdlp-2026.08.19_deno-2.9.7",
+    "yt_dlp": {
+      "version": "2026.08.19",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos",
+      "asset_id": 521488882,
+      "length": 37146048,
+      "sha256": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202",
+      "filename": "yt-dlp",
+      "archive": "raw"
+    },
+    "deno": {
+      "version": "2.9.7",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-apple-darwin.zip",
+      "asset_id": 568516488,
+      "length": 42295422,
+      "sha256": "95daaff11c116a52ad54785e7914c8e9c9cdcaba793c5ed929c74ca2d8e6259a",
+      "filename": "deno",
+      "archive": "zip"
+    }
+  }
+]

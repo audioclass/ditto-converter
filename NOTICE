@@ -1,0 +1,12 @@
+Ditto Converter
+Copyright (c) 2026 Ditto Converter contributors
+Original application code and generated loop-ring icon: MIT License.
+
+This project is not affiliated with or endorsed by TC Electronic.
+Ditto+ is referenced to describe the intended export target.
+
+Third-party components retain their licenses. FFmpeg/ffprobe are separate
+LGPL-licensed executables built from the pinned official source, not MIT.
+Optional standalone yt-dlp contains GPLv3+ components; Deno and bundled
+third-party code retain their respective licenses. No third-party helper
+binary is checked into this source repository. See docs/THIRD_PARTY.md.
