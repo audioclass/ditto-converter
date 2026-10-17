@@ -5,6 +5,19 @@ import {join} from 'node:path';
 import {binaryArchitecture,assertHost,root} from './native.mjs';
 import * as native from './native.mjs';
 
+test('NSIS identity comparison permits only the pinned Tauri bundle marker patch',()=>{
+ const original=Buffer.from('PE bytes\0__TAURI_BUNDLE_TYPE_VAR_UNK\0unchanged payload');
+ const snapshot=Buffer.from(original);
+ assert.equal(typeof native.nsisPatchedApplication,'function');
+ const expected=native.nsisPatchedApplication(original);
+ assert.equal(expected.toString(),'PE bytes\0__TAURI_BUNDLE_TYPE_VAR_NSS\0unchanged payload');
+ assert.deepEqual(original,snapshot);
+ assert.throws(()=>native.nsisPatchedApplication(Buffer.from('missing marker')),/marker/);
+ assert.throws(()=>native.nsisPatchedApplication(Buffer.concat([original,original])),/marker/);
+ const unrelated=Buffer.from(expected);unrelated[0]^=1;
+ assert.notDeepEqual(expected,unrelated);
+});
+
 test('structured command output parses stdout JSON despite Cargo stderr diagnostics',()=>{
  const metadata={packages:[],resolve:{nodes:[]}};
  const output=native.run(process.execPath,['-e',`process.stdout.write(${JSON.stringify(JSON.stringify(metadata))});process.stderr.write(' Downloading crates ...\\n');`],{stdoutOnly:true});

@@ -33,6 +33,15 @@ export function assertHost(platform,arch){
 export function validateHelperLicense(license,configuration){
  if(!license.replace(/\s+/g,' ').includes('GNU Lesser General Public License')||/--enable-(gpl|version3|nonfree)/.test(configuration))throw Error('Unapproved helper license/configuration');
 }
+// Tauri CLI 2.12.3 / tauri-bundler at 59b63ab500da9859f12d8888c3298bc29bba0b92
+// bundle.rs patches UNK->NSS for NSIS then restores the original release file.
+// Construct the exact expected unsigned payload; no other byte changes allowed.
+export function nsisPatchedApplication(original){
+ const marker=Buffer.from('__TAURI_BUNDLE_TYPE_VAR_UNK'),replacement=Buffer.from('__TAURI_BUNDLE_TYPE_VAR_NSS');
+ const offset=original.indexOf(marker);
+ if(offset<0||original.indexOf(marker,offset+marker.length)!==-1)throw Error('Missing or ambiguous Tauri bundle marker');
+ const expected=Buffer.from(original);replacement.copy(expected,offset);return expected;
+}
 function nativeHost(){assertHost(process.platform,process.arch);}
 export function run(exe,args,{stdoutOnly=false,...options}={}){
  const r=spawnSync(exe,args,{cwd:root,encoding:'utf8',windowsHide:true,timeout:120000,maxBuffer:64*1024*1024,...options});
@@ -142,12 +151,18 @@ function collect(){
  if(manifest.platform!==process.platform||manifest.arch!==process.arch)throw Error('Packaged platform mismatch');
  for(const f of manifest.files)if(digest(readFileSync(join(resource,'bin',f.name)))!==f.sha256)throw Error('Packaged helper mismatch');
  const packages=[];
+ let packagedApplication;
  if(process.platform==='win32'){
+  const expectedApplication=nsisPatchedApplication(readFileSync(app));
+  const expectedHash=digest(expectedApplication);
   for(const f of readdirSync(join(bundle,'nsis')))if(f.endsWith('.exe')){
    const installer=join(bundle,'nsis',f), extracted=join(ci,'nsis-check');
    writeFileSync(join(evidence,'nsis-extract.txt'),run('7z',['x','-y',`-o${extracted}`,installer]));
    const extractedFiles=walk(extracted);
-   if(!extractedFiles.some(p=>basename(p)===basename(app)&&digest(readFileSync(p))===digest(readFileSync(app))))throw Error('Installer missing exact native application');
+   json(join(evidence,'nsis-file-inventory.json'),extractedFiles.map(p=>({...record(p),binary_arch:binaryArchitecture(readFileSync(p))})));
+   const packaged=extractedFiles.find(p=>basename(p)===basename(app)&&digest(readFileSync(p))===expectedHash);
+   if(!packaged)throw Error('Installer missing exact NSIS-patched native application');
+   packagedApplication={...record(packaged),binary_arch:binaryArchitecture(readFileSync(packaged)),expected_sha256:expectedHash,allowed_change:'Single Tauri bundle marker UNK->NSS, source-pinned CLI 2.12.3; all other bytes exact'};
    for(const helper of manifest.files)if(!extractedFiles.some(p=>basename(p)===helper.name&&digest(readFileSync(p))===helper.sha256))throw Error('Installer missing exact audited helper');
    if(!extractedFiles.some(p=>basename(p)==='offline-engine.json'&&digest(readFileSync(p))===digest(readFileSync(manifests[0]))))throw Error('Installer missing audited manifest');
    for(const notice of walk(stagedNotices)){
@@ -178,7 +193,7 @@ function collect(){
  copyFileSync(join(root,'LICENSE'),join(out,'LICENSE'));
  writeFileSync(join(out,'README-LGPL.txt'),`Ditto Converter original application code is MIT licensed; see LICENSE. Third-party components retain their licenses, notices and source rights. FFmpeg/ffprobe ${version} are independent offline executables, LGPL-2.1-or-later, not MIT. Exact unmodified corresponding FFmpeg source, its COPYING/notice texts, configure-command, config.h/config.mak, and rebuild scripts are in this download. Source SHA256: ${sourceHash}. Source provenance: ${sourceURL}. Run build-ffmpeg.sh from scripts/ci under the source project root on the matching native host. No GPL/nonfree/version3 components enabled; internal FFmpeg libraries static, platform system libraries dynamic. Users may replace the independent helper executables with compatible builds. See binary linkage and dependency inventory evidence. Full-feature fixture generator is test-only and NOT redistributed. Unsigned development packages; no installer/UI/hardware acceptance inferred. One-day Actions artifact retention is NOT a durable public source distribution mechanism. Any further distribution must retain corresponding source/notices with binaries at the same download location, beyond Actions expiration.\n`);
  cpSync(evidence,join(out,'evidence'),{recursive:true});
- json(join(evidence,'packages.json'),{platform:process.platform,arch:process.arch,application:{...record(app),binary_arch:binaryArchitecture(readFileSync(app))},packages});
+ json(join(evidence,'packages.json'),{platform:process.platform,arch:process.arch,application:{...record(app),binary_arch:binaryArchitecture(readFileSync(app))},packaged_application:packagedApplication,packages});
  copyFileSync(join(evidence,'packages.json'),join(out,'evidence/packages.json'));
  json(join(out,'checksums.json'),walk(out).map(p=>({...record(p),path:relative(out,p).replaceAll('\\','/')})));
 }
