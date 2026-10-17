@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {existsSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {binaryArchitecture,assertHost,root} from './native.mjs';
+import * as native from './native.mjs';
 
 test('PE machine field, not just MZ, distinguishes x64/arm64/x86',()=>{
  for(const [machine,arch] of [[0x8664,'x64'],[0xaa64,'arm64'],[0x14c,'x86']]){
@@ -23,6 +24,12 @@ test('Linux and mismatched native targets are rejected',()=>{
  assert.throws(()=>assertHost('linux','x64'),/Unsupported/);
  if(process.platform!=='win32')assert.throws(()=>assertHost('win32','x64'),/does not match/);
  if(process.platform!=='darwin')assert.throws(()=>assertHost('darwin','arm64'),/does not match/);
+});
+test('helper license validation accepts wrapped LGPL text but rejects incompatible builds',()=>{
+ assert.equal(typeof native.validateHelperLicense,'function');
+ assert.doesNotThrow(()=>native.validateHelperLicense('GNU Lesser General Public\nLicense; version 2.1 or later','--disable-everything --disable-network'));
+ for(const option of ['gpl','nonfree','version3'])assert.throws(()=>native.validateHelperLicense('GNU Lesser General Public License',`--enable-${option}`),/Unapproved/);
+ assert.throws(()=>native.validateHelperLicense('GNU General Public License','--disable-network'),/Unapproved/);
 });
 test('workflow pins every action SHA, runner labels, budget controls and no privileged PR context',()=>{
  const y=readFileSync(join(root,'.github/workflows/native.yml'),'utf8');

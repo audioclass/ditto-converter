@@ -29,6 +29,9 @@ export function assertHost(platform,arch){
  if(process.platform!==platform||process.arch!==arch||os.machine().toLowerCase()!==(arch==='x64'?'x86_64':'arm64'))throw Error(`Actual host ${process.platform}/${process.arch}/${os.machine()} does not match ${platform}/${arch}`);
  if(process.env.GITHUB_ACTIONS==='true'&&(process.env.RUNNER_OS!==(platform==='win32'?'Windows':'macOS')||process.env.RUNNER_ARCH!==(arch==='x64'?'X64':'ARM64')))throw Error('Runner OS/architecture mismatch');
 }
+export function validateHelperLicense(license,configuration){
+ if(!license.replace(/\s+/g,' ').includes('GNU Lesser General Public License')||/--enable-(gpl|version3|nonfree)/.test(configuration))throw Error('Unapproved helper license/configuration');
+}
 function nativeHost(){assertHost(process.platform,process.arch);}
 function run(exe,args,options={}){
  const r=spawnSync(exe,args,{cwd:root,encoding:'utf8',windowsHide:true,timeout:120000,maxBuffer:64*1024*1024,...options});
@@ -61,7 +64,7 @@ function stage(){
   const file=name+suffix, src=join(engine,'install/bin',file), b=readFileSync(src);
   if(binaryArchitecture(b)!==process.arch)throw Error(`${file}: wrong binary architecture`);
   const license=run(src,['-L']), conf=run(src,['-buildconf']);
-  if(!license.includes('GNU Lesser General Public License')||/--enable-(gpl|version3|nonfree)/.test(conf))throw Error('Unapproved helper license/configuration');
+  validateHelperLicense(license,conf);
   for(const [label,args] of Object.entries({version:['-version'],buildconf:['-buildconf'],license:['-L']}))writeFileSync(join(evidence,`${name}-${label}.txt`),run(src,args));
   const linkage=process.platform==='darwin'?run('otool',['-L',src]):run('C:\\msys64\\ucrt64\\bin\\objdump.exe',['-p',src]);
   writeFileSync(join(evidence,`${name}-linkage.txt`),linkage);
