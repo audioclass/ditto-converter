@@ -1,6 +1,28 @@
 #!/usr/bin/env bash
 # Native scoped offline engine; never use this pair as a corpus generator.
 set -euo pipefail
+
+# Copy the exact installed package notices, never a private research snapshot.
+# MSYS2 has used both gcc-libs and libgcc for the runtime package split.
+copy_windows_runtime_notices() {
+  local source=$1 destination=$2 package notice found=0
+  for notice in winpthreads/COPYING crt/COPYING crt/COPYING.MinGW-w64.txt crt/COPYING.MinGW-w64-runtime.txt; do
+    [[ -s "$source/$notice" ]] || { echo "Missing runtime notice: $source/$notice" >&2; return 1; }
+  done
+  for package in gcc-libs libgcc gcc; do
+    if [[ -s "$source/$package/COPYING3" && -s "$source/$package/COPYING.RUNTIME" ]]; then
+      mkdir -p "$destination/$package"
+      cp -R "$source/$package/." "$destination/$package/"
+      found=1
+    fi
+  done
+  [[ "$found" == 1 ]] || { echo 'Missing installed GCC license/runtime exception' >&2; return 1; }
+  for package in winpthreads crt; do
+    mkdir -p "$destination/$package"
+    cp -R "$source/$package/." "$destination/$package/"
+  done
+}
+
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 BASE="$ROOT/.work/ci/ffmpeg"
 VERSION=8.1.3
@@ -14,7 +36,9 @@ case "$(uname -s):$(uname -m)" in
     export PATH="/ucrt64/bin:/usr/bin:$PATH"
     [[ "$(gcc -dumpmachine)" == x86_64-w64-mingw32 ]] || { echo 'Wrong MinGW target'; exit 1; }
     platform=win32
-    extra=(--arch=x86_64 --target-os=mingw32 --cc=gcc --disable-pthreads --enable-w32threads --extra-ldflags=-static-libgcc);;
+    # FFmpeg's threading backend does not control GCC's POSIX runtime linkage.
+    # Keep this ONE configure argument; -static-libgcc alone leaves winpthread dynamic.
+    extra=(--arch=x86_64 --target-os=mingw32 --cc=gcc --disable-pthreads --enable-w32threads '--extra-ldflags=-static -static-libgcc');;
   *) echo 'Only native Apple Silicon macOS / Windows x64 builds are authorized'; exit 1;;
 esac
 archive="$BASE/source/ffmpeg-$VERSION.tar.xz"
@@ -52,7 +76,10 @@ mkdir -p "$BASE/install/notices"
 cp "$BASE/source/ffmpeg-$VERSION"/COPYING* "$BASE/source/ffmpeg-$VERSION/LICENSE.md" "$BASE/install/notices/"
 if [[ "$platform" == win32 ]]; then
   gcc --version > "$BASE/evidence/compiler.txt"
+  gcc -v 2> "$BASE/evidence/compiler-config.txt"
+  gcc -dumpspecs > "$BASE/evidence/compiler-specs.txt"
   pacman -Q > "$BASE/evidence/msys2-packages.txt"
+  copy_windows_runtime_notices "/ucrt64/share/licenses" "$BASE/install/notices"
 else
   clang --version > "$BASE/evidence/compiler.txt"
   xcodebuild -version > "$BASE/evidence/xcode.txt"

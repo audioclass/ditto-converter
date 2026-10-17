@@ -33,10 +33,11 @@ export function validateHelperLicense(license,configuration){
  if(!license.replace(/\s+/g,' ').includes('GNU Lesser General Public License')||/--enable-(gpl|version3|nonfree)/.test(configuration))throw Error('Unapproved helper license/configuration');
 }
 function nativeHost(){assertHost(process.platform,process.arch);}
-function run(exe,args,options={}){
+export function run(exe,args,{stdoutOnly=false,...options}={}){
  const r=spawnSync(exe,args,{cwd:root,encoding:'utf8',windowsHide:true,timeout:120000,maxBuffer:64*1024*1024,...options});
  if(r.error||r.status!==0)throw Error(`${exe} ${args.join(' ')} failed: ${r.error??r.status}\n${r.stdout??''}\n${r.stderr??''}`);
- return `${r.stdout??''}${r.stderr??''}`;
+ // Structured consumers must not parse diagnostics; audits/evidence retain both streams.
+ return stdoutOnly?(r.stdout??''):`${r.stdout??''}${r.stderr??''}`;
 }
 function env(values){
  if(!process.env.GITHUB_ENV)throw Error('GITHUB_ENV required');
@@ -102,7 +103,7 @@ function prepare(){
 }
 function inventories(){
  nativeHost();
- const meta=JSON.parse(run('cargo',['metadata','--locked','--format-version','1','--features','desktop,custom-protocol']));
+ const meta=JSON.parse(run('cargo',['metadata','--locked','--format-version','1','--features','desktop,custom-protocol'],{stdoutOnly:true}));
  if(meta.resolve.nodes.some(n=>n.id.includes('ditto-converter')&&n.features.includes('smoke')))throw Error('Production resolved smoke feature');
  const dest=join(root,'src-tauri/resources/notices/dependencies');mkdirSync(dest,{recursive:true});
  const packages=meta.packages.map(p=>{
@@ -126,7 +127,7 @@ function collect(){
  nativeHost();const out=join(ci,'deliverables');rmSync(out,{recursive:true,force:true});mkdirSync(out,{recursive:true});
  const release=join(ci,'target/release'), bundle=join(release,'bundle');
  const macApp=join(bundle,'macos/Ditto Converter.app');
- const executable=process.platform==='darwin'?run('/usr/libexec/PlistBuddy',['-c','Print :CFBundleExecutable',join(macApp,'Contents/Info.plist')]).trim():null;
+ const executable=process.platform==='darwin'?run('/usr/libexec/PlistBuddy',['-c','Print :CFBundleExecutable',join(macApp,'Contents/Info.plist')],{stdoutOnly:true}).trim():null;
  if(process.platform==='darwin'&&(!executable||basename(executable)!==executable))throw Error('Invalid application executable');
  const app=process.platform==='win32'?join(release,'ditto-converter.exe'):join(macApp,'Contents/MacOS',executable);
  if(binaryArchitecture(readFileSync(app))!==process.arch)throw Error('Packaged application architecture mismatch');

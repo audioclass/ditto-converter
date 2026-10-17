@@ -135,7 +135,7 @@ jobs:
         run: |
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs
+          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs
           exit $LASTEXITCODE
       - name: Inventory dependencies and stage available third-party notices
         run: node scripts/ci/native.mjs inventories
@@ -146,6 +146,8 @@ jobs:
           exit $LASTEXITCODE
       - name: Verify expected packages and assemble binaries WITH LGPL source
         run: node scripts/ci/native.mjs collect
+      - name: Native UI smoke with separate test-only executable
+        run: node scripts/ci/smoke.mjs
       # Paired unsigned test packages/source: owner-authorized repository variable.
       # Fork PRs may test code but may not publish native packages.
       - name: Upload paired native packages, corresponding source and notices
@@ -165,6 +167,7 @@ jobs:
           path: |
             .work/ci/evidence/
             .work/ci/ffmpeg/evidence/
+            .work/ci/smoke-runs/*/*.log
           retention-days: 1
           if-no-files-found: warn
           compression-level: 6

@@ -5,6 +5,23 @@ import {join} from 'node:path';
 import {binaryArchitecture,assertHost,root} from './native.mjs';
 import * as native from './native.mjs';
 
+test('structured command output parses stdout JSON despite Cargo stderr diagnostics',()=>{
+ const metadata={packages:[],resolve:{nodes:[]}};
+ const output=native.run(process.execPath,['-e',`process.stdout.write(${JSON.stringify(JSON.stringify(metadata))});process.stderr.write(' Downloading crates ...\\n');`],{stdoutOnly:true});
+ assert.deepEqual(JSON.parse(output),metadata);
+});
+test('stdout-only commands retain stdout and stderr diagnostics on failure',()=>{
+ assert.throws(()=>native.run(process.execPath,['-e',"process.stdout.write('partial metadata');process.stderr.write('cargo download failed');process.exitCode=7;"],{stdoutOnly:true}),error=>{
+  assert.match(error.message,/failed: 7/);
+  assert.match(error.message,/partial metadata/);
+  assert.match(error.message,/cargo download failed/);
+  return true;
+ });
+});
+test('default command output retains both streams for helper audits and evidence',()=>{
+ assert.equal(native.run(process.execPath,['-e',"process.stdout.write('license');process.stderr.write('configuration');"]),'licenseconfiguration');
+});
+
 test('PE machine field, not just MZ, distinguishes x64/arm64/x86',()=>{
  for(const [machine,arch] of [[0x8664,'x64'],[0xaa64,'arm64'],[0x14c,'x86']]){
   const b=Buffer.alloc(128);b.write('MZ');b.writeUInt32LE(64,60);b.write('PE\0\0',64);b.writeUInt16LE(machine,68);
