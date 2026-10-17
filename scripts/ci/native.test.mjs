@@ -72,6 +72,24 @@ test('macOS corpus uses the full keg-only FFmpeg fixture generator',()=>{
  const workflow=readFileSync(join(root,'.github/workflows/native.yml'),'utf8');
  assert.match(workflow,/brew install ffmpeg-full/);
  assert.match(workflow,/brew --prefix ffmpeg-full/);
+ });
+ test('Windows uses actual user-owned storage without changing ownership policy',()=>{
+ const workflow=readFileSync(join(root,'.github/workflows/native.yml'),'utf8');
+ assert.match(workflow,/workdir: 'C:\\Users\\runneradmin\\ditto-converter-ci'/);
+ assert.match(workflow,/working-directory: \$\{\{ matrix.workdir \}\}/);
+ assert.match(workflow,/Unexpected Windows runner profile/);
+ assert.match(workflow,/robocopy \$env:GITHUB_WORKSPACE \$destination/);
+ assert.doesNotMatch(workflow,/\/setowner|takeown|Set-Acl|continue-on-error/);
+ assert.match(workflow,/path: \$\{\{ matrix.workdir \}\}\/\.work\/ci\/deliverables\//);
+ assert.match(workflow,/cargo test -p ditto-core --lib staging::windows::tests --locked/);
+ });
+test('unresolved macOS rights cannot publish binaries while build/smoke still execute',()=>{
+ const workflow=readFileSync(join(root,'.github/workflows/native.yml'),'utf8');
+ assert.match(workflow,/if: runner.os == 'Windows' && github.event_name != 'pull_request' && vars.DITTO_NATIVE_PACKAGE_UPLOAD_AUTHORIZED == 'true'/);
+ assert.ok(workflow.indexOf('macOS publication-rights gate')>workflow.indexOf('node scripts/ci/smoke.mjs'));
+ assert.match(workflow,/node scripts\/ci\/notices.mjs aarch64-apple-darwin/);
+ assert.match(workflow,/node scripts\/ci\/notices.mjs x86_64-pc-windows-msvc/);
+ assert.doesNotMatch(workflow,/continue-on-error/);
 });
 test('native source pin matches existing audited Linux source pin',()=>{
  const a=readFileSync(join(root,'scripts/toolchain/build-ffmpeg.sh'),'utf8');

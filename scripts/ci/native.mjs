@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import os from 'node:os';
+import {verifyNoticeReport} from './notices.mjs';
 
 export const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const ci=join(root,'.work/ci'), evidence=join(ci,'evidence'), engine=join(ci,'ffmpeg');
@@ -134,6 +135,9 @@ function collect(){
  const manifests=process.platform==='darwin'?walk(join(macApp,'Contents/Resources')).filter(p=>basename(p)==='offline-engine.json'):[join(root,'src-tauri/resources/offline-engine.json')];
  if(manifests.length!==1)throw Error('Expected one packaged offline engine manifest');
  const resource=dirname(manifests[0]);
+ const stagedNotices=join(root,'src-tauri/resources/notices');
+ let nativeNotices;
+ if(process.platform==='win32')nativeNotices=verifyNoticeReport(join(stagedNotices,'dependencies'),'x86_64-pc-windows-msvc',join(root,'Cargo.lock'));
  const manifest=JSON.parse(readFileSync(manifests[0],'utf8'));
  if(manifest.platform!==process.platform||manifest.arch!==process.arch)throw Error('Packaged platform mismatch');
  for(const f of manifest.files)if(digest(readFileSync(join(resource,'bin',f.name)))!==f.sha256)throw Error('Packaged helper mismatch');
@@ -146,6 +150,10 @@ function collect(){
    if(!extractedFiles.some(p=>basename(p)===basename(app)&&digest(readFileSync(p))===digest(readFileSync(app))))throw Error('Installer missing exact native application');
    for(const helper of manifest.files)if(!extractedFiles.some(p=>basename(p)===helper.name&&digest(readFileSync(p))===helper.sha256))throw Error('Installer missing exact audited helper');
    if(!extractedFiles.some(p=>basename(p)==='offline-engine.json'&&digest(readFileSync(p))===digest(readFileSync(manifests[0]))))throw Error('Installer missing audited manifest');
+   for(const notice of walk(stagedNotices)){
+    const tail='/resources/notices/'+relative(stagedNotices,notice).replaceAll('\\','/');
+    if(!extractedFiles.some(p=>p.replaceAll('\\','/').endsWith(tail)&&digest(readFileSync(p))===digest(readFileSync(notice))))throw Error(`Installer missing exact notice: ${tail}`);
+   }
    copyFileSync(installer,join(out,f));packages.push(f);
   }
  }else{
@@ -161,6 +169,12 @@ function collect(){
  cpSync(join(engine,'installation-manifest.json'),join(out,'ffmpeg-installation-manifest.json'));
  cpSync(join(root,'scripts/ci'),join(out,'rebuild-scripts'),{recursive:true});
  cpSync(join(root,'src-tauri/resources/notices'),join(out,'notices'),{recursive:true});
+ if(nativeNotices){
+  for(const source of nativeNotices.mpl_sources){
+   if(digest(readFileSync(join(ci,'mpl-corresponding-source',source.file)))!==source.sha256)throw Error('MPL source checksum mismatch');
+  }
+  cpSync(join(ci,'mpl-corresponding-source'),join(out,'mpl-corresponding-source'),{recursive:true});
+ }
  copyFileSync(join(root,'LICENSE'),join(out,'LICENSE'));
  writeFileSync(join(out,'README-LGPL.txt'),`Ditto Converter original application code is MIT licensed; see LICENSE. Third-party components retain their licenses, notices and source rights. FFmpeg/ffprobe ${version} are independent offline executables, LGPL-2.1-or-later, not MIT. Exact unmodified corresponding FFmpeg source, its COPYING/notice texts, configure-command, config.h/config.mak, and rebuild scripts are in this download. Source SHA256: ${sourceHash}. Source provenance: ${sourceURL}. Run build-ffmpeg.sh from scripts/ci under the source project root on the matching native host. No GPL/nonfree/version3 components enabled; internal FFmpeg libraries static, platform system libraries dynamic. Users may replace the independent helper executables with compatible builds. See binary linkage and dependency inventory evidence. Full-feature fixture generator is test-only and NOT redistributed. Unsigned development packages; no installer/UI/hardware acceptance inferred. One-day Actions artifact retention is NOT a durable public source distribution mechanism. Any further distribution must retain corresponding source/notices with binaries at the same download location, beyond Actions expiration.\n`);
  cpSync(evidence,join(out,'evidence'),{recursive:true});

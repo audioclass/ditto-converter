@@ -29,6 +29,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             bundles: nsis
             icon: icon.ico
+            workdir: 'C:\Users\runneradmin\ditto-converter-ci'
           - name: macOS Apple Silicon
             runner: macos-15
             platform: darwin
@@ -36,9 +37,11 @@ jobs:
             target: aarch64-apple-darwin
             bundles: app,dmg
             icon: icon.icns
+            workdir: '.'
     defaults:
       run:
         shell: pwsh
+        working-directory: ${{ matrix.workdir }}
     env:
       CARGO_TERM_COLOR: never
       CARGO_INCREMENTAL: '0'
@@ -56,6 +59,20 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
+      - name: Place Windows test project in current-user system-volume storage
+        if: runner.os == 'Windows'
+        working-directory: ${{ github.workspace }}
+        run: |
+          $destination = Join-Path $env:USERPROFILE 'ditto-converter-ci'
+          if ($destination -ne '${{ matrix.workdir }}') { throw 'Unexpected Windows runner profile; do not guess a storage path' }
+          if (Test-Path $destination) { throw 'Refusing to overwrite an existing test project' }
+          # D: on this runner is owned by NetworkService, outside the recovery
+          # trust model. Use real private user storage; never rewrite its ACLs.
+          New-Item -ItemType Directory -Path $destination | Out-Null
+          robocopy $env:GITHUB_WORKSPACE $destination /E /XD .git /R:1 /W:1 /NFL /NDL /NJH /NJS
+          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
+          Get-Acl 'C:\', $env:USERPROFILE, $destination | Format-List Path, Owner, AccessToString
+          exit 0
       - name: Install pinned Node (no cache)
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -140,10 +157,17 @@ jobs:
         run: |
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs
+          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs scripts/ci/notices.test.mjs
           exit $LASTEXITCODE
       - name: Inventory dependencies and stage available third-party notices
         run: node scripts/ci/native.mjs inventories
+      - name: Verify exact Windows native notices and pair MPL source
+        if: runner.os == 'Windows'
+        run: |
+          node scripts/ci/notices.mjs x86_64-pc-windows-msvc src-tauri/resources/notices/dependencies .work/ci/mpl-corresponding-source
+          $result = $LASTEXITCODE
+          if (Test-Path src-tauri/resources/notices/dependencies/native-notice-report.json) { Copy-Item src-tauri/resources/notices/dependencies/native-notice-report.json .work/ci/evidence/native-notice-report.json }
+          exit $result
       - name: Build unsigned native installer/app/disk image without smoke
         run: |
           # File config avoids JSON quoting loss through npm.cmd on Windows.
@@ -154,11 +178,11 @@ jobs:
       # Paired unsigned test packages/source: owner-authorized repository variable.
       # Fork PRs may test code but may not publish native packages.
       - name: Upload paired native packages, corresponding source and notices
-        if: github.event_name != 'pull_request' && vars.DITTO_NATIVE_PACKAGE_UPLOAD_AUTHORIZED == 'true'
+        if: runner.os == 'Windows' && github.event_name != 'pull_request' && vars.DITTO_NATIVE_PACKAGE_UPLOAD_AUTHORIZED == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ditto-native-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_attempt }}
-          path: .work/ci/deliverables/
+          path: ${{ matrix.workdir }}/.work/ci/deliverables/
           retention-days: 1
           if-no-files-found: error
           compression-level: 6
@@ -166,15 +190,25 @@ jobs:
       # Smoke remains required and still fails the job; it cannot alter these files.
       - name: Native UI smoke with separate test-only executable
         run: node scripts/ci/smoke.mjs
+      # Build/UI evidence remains useful, but macOS binaries must not be made
+      # public while the pinned objc2 upstream notice/SDK-rights gate is unresolved.
+      - name: macOS publication-rights gate (no binary upload)
+        if: runner.os == 'macOS'
+        run: |
+          node scripts/ci/notices.mjs aarch64-apple-darwin src-tauri/resources/notices/dependencies .work/ci/mpl-corresponding-source
+          $result = $LASTEXITCODE
+          if (Test-Path src-tauri/resources/notices/dependencies/native-notice-report.json) { Copy-Item src-tauri/resources/notices/dependencies/native-notice-report.json .work/ci/evidence/native-notice-report.json }
+          exit $result
       - name: Preserve scoped build diagnostics, never an unpaired binary
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ditto-diagnostics-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_attempt }}
           path: |
-            .work/ci/evidence/
-            .work/ci/ffmpeg/evidence/
-            .work/ci/smoke-runs/*/*.log
+            ${{ matrix.workdir }}/.work/ci/evidence/
+            ${{ matrix.workdir }}/.work/ci/ffmpeg/evidence/
+            ${{ matrix.workdir }}/.work/ci/smoke-runs/*/*.log
+
           retention-days: 1
           if-no-files-found: warn
           compression-level: 6

@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {createHash} from 'node:crypto';
+import {collectNotices,parseCargoTree,verifyNoticeReport} from './notices.mjs';
+const scratch=resolve('.work/notice-tests');mkdirSync(scratch,{recursive:true});
+const hash=b=>createHash('sha256').update(b).digest('hex');
+function fixture(t){const root=mkdtempSync(join(scratch,'case-'));t.after(()=>rmSync(root,{recursive:true,force:true}));writeFileSync(join(root,'LICENSE'),'Actual workspace MIT notice');return {root,destination:join(root,'out'),sourceDestination:join(root,'sources'),included:new Set(['ditto-core@0.1.0']),runtime:new Set(['ditto-core@0.1.0']),metadata:{workspace_members:['local'],packages:[{id:'local',name:'ditto-core',version:'0.1.0',license:'MIT',source:null,manifest_path:join(root,'crates/core/Cargo.toml')}]},pins:{schema:1,crates:[]}};}
+function thirdParty(f,{license='MIT',name='example',version='1.0.0'}={}){const base=join(f.root,'registry',`${name}-${version}`);mkdirSync(base,{recursive:true});writeFileSync(join(base,'Cargo.toml'),'');writeFileSync(join(base,'.cargo_vcs_info.json'),JSON.stringify({git:{sha1:'a'.repeat(40)},path_in_vcs:'crates/example'}));const p={id:'registry:'+name,name,version,license,source:'registry+https://github.com/rust-lang/crates.io-index',repository:'https://github.com/example/upstream',manifest_path:join(base,'Cargo.toml')};f.metadata.packages=[p];f.included=new Set([`${name}@${version}`]);f.runtime=new Set(f.included);return base;}
+function pin(f,bytes,{status='complete'}={}){const p=f.metadata.packages[0];const n={name:p.name,version:p.version,license:p.license,repository:p.repository,commit:'a'.repeat(40),path_in_vcs:'crates/example',status,notices:[{url:`https://raw.githubusercontent.com/example/upstream/${'a'.repeat(40)}/LICENSE`,sha256:hash(bytes),filename:'LICENSE-upstream'}]};f.pins.crates=[n];f.fetcher=async()=>bytes;return n;}
+test('unknown included crate fails closed',async t=>{const f=fixture(t);thirdParty(f);await assert.rejects(collectNotices(f),/Missing notices/);});
+test('pinned immutable upstream notice copied byte for byte',async t=>{const f=fixture(t);thirdParty(f);const b=Buffer.from('Exact upstream copyright and permission');pin(f,b);const r=await collectNotices(f);assert.equal(r.cargo[0].review_required,false);assert.deepEqual(readFileSync(join(f.destination,'cargo/example-1.0.0/LICENSE-upstream')),b);});
+test('network failure and checksum mismatch fail closed',async t=>{const f=fixture(t);thirdParty(f);pin(f,Buffer.from('exact'));f.fetcher=async()=>{throw Error('offline');};await assert.rejects(collectNotices(f),/offline/);f.fetcher=async()=>Buffer.from('wrong');await assert.rejects(collectNotices(f),/SHA256/);});
+test('VCS mismatch and incomplete grant cannot clear review',async t=>{const f=fixture(t);thirdParty(f);const n=pin(f,Buffer.from('links only'),{status:'unresolved'});await assert.rejects(collectNotices(f),/unresolved/);n.status='complete';n.commit='b'.repeat(40);await assert.rejects(collectNotices(f),/provenance/);});
+test('non-included supersets do not require notices',async t=>{const f=fixture(t);thirdParty(f);f.included=new Set();assert.equal((await collectNotices(f)).cargo.length,0);});
+test('tree parser accepts dedup and proc-macro labels, rejects unexpected text',()=>{assert.deepEqual([...parseCargoTree('example v1.0.0\nexample v1.0.0 (*)\nmacro v2.0.0 (proc-macro)')],['example@1.0.0','macro@2.0.0']);assert.throws(()=>parseCargoTree('not a dependency'),/Invalid/);});
+test('MPL source archive checksum is verified against the exact Cargo.lock package',async t=>{const f=fixture(t);const base=thirdParty(f,{license:'MPL-2.0'});writeFileSync(join(base,'LICENSE'),'Actual MPL notice');const b=Buffer.from('exact source archive');f.pins.mplSources=[{name:'example',version:'1.0.0',license:'MPL-2.0',source:f.metadata.packages[0].source,url:'https://static.crates.io/crates/example/example-1.0.0.crate',sha256:hash(b)}];writeFileSync(join(f.root,'Cargo.lock'),`version = 4\n\n[[package]]\nname = "example"\nversion = "1.0.0"\nsource = "${f.metadata.packages[0].source}"\nchecksum = "${hash(b)}"\n`);f.fetcher=async()=>b;const r=await collectNotices(f);assert.equal(r.mpl_sources.length,1);assert.deepEqual(readFileSync(join(f.sourceDestination,'example-1.0.0.crate')),b);});
+test('local notices copied and unknown license metadata still blocks',async t=>{const f=fixture(t);const base=thirdParty(f);writeFileSync(join(base,'LICENSE'),'Upstream exact notice');assert.equal((await collectNotices(f)).cargo[0].review_required,false);f.metadata.packages[0].license=null;await assert.rejects(collectNotices(f),/license metadata/);});
+test('mutable URL and unsafe filename rejected',async t=>{const f=fixture(t);thirdParty(f);const n=pin(f,Buffer.from('exact'));n.notices[0].url=n.notices[0].url.replace('a'.repeat(40),'main');await assert.rejects(collectNotices(f),/provenance|immutable/);n.notices[0].url=n.notices[0].url.replace('main','a'.repeat(40));n.notices[0].filename='../escape';await assert.rejects(collectNotices(f),/Unsafe/);});
+test('unmatched included package fails',async t=>{const f=fixture(t);f.included.add('missing@2.0.0');await assert.rejects(collectNotices(f),/absent from metadata/);});
+test('workspace MIT copies exact root LICENSE, not invented copyright',async t=>{const f=fixture(t);const r=await collectNotices(f);assert.equal(r.cargo[0].review_required,false);assert.equal(readFileSync(join(f.destination,'cargo/ditto-core-0.1.0/LICENSE'),'utf8'),'Actual workspace MIT notice');});
+test('package gate verifies exact notice bytes, target and lockfile and rejects unresolved reports',async t=>{
+ const f=fixture(t);f.target='x86_64-pc-windows-msvc';writeFileSync(join(f.root,'Cargo.lock'),'exact locked input');
+ const report=await collectNotices(f),lock=join(f.root,'Cargo.lock');
+ assert.equal(verifyNoticeReport(f.destination,f.target,lock).cargo.length,1);
+ assert.throws(()=>verifyNoticeReport(f.destination,'aarch64-apple-darwin',lock),/different build/);
+ report.failures=['unresolved'];writeFileSync(join(f.destination,'native-notice-report.json'),JSON.stringify(report));
+ assert.throws(()=>verifyNoticeReport(f.destination,f.target,lock),/unresolved/);
+ report.failures=[];writeFileSync(join(f.destination,'native-notice-report.json'),JSON.stringify(report));
+ writeFileSync(join(f.destination,'cargo/ditto-core-0.1.0/LICENSE'),'changed');
+ assert.throws(()=>verifyNoticeReport(f.destination,f.target,lock),/checksum/);
+});

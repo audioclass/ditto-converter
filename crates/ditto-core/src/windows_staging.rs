@@ -432,7 +432,11 @@ fn security(file: &File, id: &Identity, private: bool, ancestor: bool) -> Result
             }
             // Object/callback/conditional ACE semantics are not guessed.
             if u32::from(header.AceType) != ACCESS_ALLOWED_ACE_TYPE {
-                return Err(invalid("unsupported Windows staging ACE"));
+                return Err(invalid(&format!(
+                    "unsupported Windows staging ACE at {:?}: type={}, role={role}",
+                    file_path(file)?,
+                    header.AceType
+                )));
             }
             let inherit_only = header.AceFlags & INHERIT_ONLY_ACE as u8 != 0;
             if inherit_only && !(private && directory) {
@@ -470,7 +474,7 @@ fn security(file: &File, id: &Identity, private: bool, ancestor: bool) -> Result
                 writes | if private { reads } else { 0 }
             };
             if !id.trusted(sid) && ace.Mask & forbidden != 0 {
-                return Err(invalid("untrusted Windows staging ACL grant"));
+                return Err(invalid(&format!("untrusted Windows staging ACL grant at {:?}: trustee={}, mask={:#x}, forbidden={forbidden:#x}, role={role}", file_path(file)?, sid_text(sid), ace.Mask)));
             }
         }
         Ok(())

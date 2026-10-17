@@ -35,6 +35,7 @@
     // Match production: only Linux uses Blob playback; native targets use assets.
     const previewSrc = /Linux/.test(navigator.userAgent) ? URL.createObjectURL(media) : src;
     const audio = new Audio();
+    audio.preload = 'auto';
     await new Promise((resolve, reject) => {
       const timer=setTimeout(()=>reject(new Error('preview metadata timeout')),8000);
       audio.onloadedmetadata = () => {clearTimeout(timer);resolve();};
@@ -42,12 +43,21 @@
       audio.src = previewSrc; audio.load();
     });
     check('scoped decoded preview loads', audio.duration > 1.9 && audio.duration < 2.1, audio.duration);
+    const ranges = values => Array.from({length:values.length},(_,i)=>[values.start(i),values.end(i)]);
+    const mediaState = () => ({src:audio.src,readyState:audio.readyState,networkState:audio.networkState,currentTime:audio.currentTime,duration:audio.duration,seekable:ranges(audio.seekable),buffered:ranges(audio.buffered),error:audio.error?.message,policyViolations});
+    // loadedmetadata alone does not establish a seekable range in WKWebView.
+    // Wait for actual decoded data and the target range; never accept seek=0.
+    const readyStarted=Date.now();
+    while(audio.readyState<3||!ranges(audio.seekable).some(([start,end])=>start<=0.75&&end>=0.75)){
+      if(audio.error||Date.now()-readyStarted>8000)throw new Error('preview not seekable: '+JSON.stringify(mediaState()));
+      await delay(25);
+    }
     await new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>reject(new Error('seek timeout')),5000);
       audio.onseeked=()=>{clearTimeout(timer);resolve();};
       audio.currentTime = 0.75;
     });
-    check('native webview seek', Math.abs(audio.currentTime-0.75)<0.02, audio.currentTime);
+    check('native webview seek', Math.abs(audio.currentTime-0.75)<0.02, mediaState());
     audio.pause(); audio.removeAttribute('src'); audio.load();
     if(previewSrc!==src)URL.revokeObjectURL(previewSrc);
     await invoke('start_queue');
