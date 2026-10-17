@@ -95,9 +95,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          brew install ffmpeg
+          brew install ffmpeg-full
           brew list --versions > .work/ci/evidence/homebrew-packages.txt
-          node scripts/ci/native.mjs fixture "$(brew --prefix)/bin/ffmpeg"
+          node scripts/ci/native.mjs fixture "$(brew --prefix ffmpeg-full)/bin/ffmpeg"
       - name: Validate Windows full fixture generator (not shipped)
         if: runner.os == 'Windows'
         run: node scripts/ci/native.mjs fixture C:\msys64\ucrt64\bin\ffmpeg.exe

@@ -44,6 +44,11 @@ test('Windows checkout keeps executable shell scripts LF',()=>{
  assert.match(readFileSync(path,'utf8'),/^\*\.sh\s+text\s+eol=lf$/m);
  assert.doesNotMatch(readFileSync(join(root,'scripts/ci/build-ffmpeg.sh'),'utf8'),/\r\n/);
 });
+test('macOS corpus uses the full keg-only FFmpeg fixture generator',()=>{
+ const workflow=readFileSync(join(root,'.github/workflows/native.yml'),'utf8');
+ assert.match(workflow,/brew install ffmpeg-full/);
+ assert.match(workflow,/brew --prefix ffmpeg-full/);
+});
 test('native source pin matches existing audited Linux source pin',()=>{
  const a=readFileSync(join(root,'scripts/toolchain/build-ffmpeg.sh'),'utf8');
  const b=readFileSync(join(root,'scripts/ci/build-ffmpeg.sh'),'utf8');
