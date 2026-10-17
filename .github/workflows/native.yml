@@ -77,6 +77,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $rustInfo
           if (-not ($rustInfo -contains 'host: ${{ matrix.target }}')) { throw 'Rust host is not the expected native target' }
+      - name: Windows ownership and journal registration regressions
+        if: runner.os == 'Windows'
+        run: |
+          cargo test -p ditto-core --lib staging::windows::tests --locked -- --nocapture 2>&1 | Tee-Object .work/ci/evidence/windows-staging-tests.txt
+          exit $LASTEXITCODE
       - name: Update preinstalled MSYS2 core in its own shell
         if: runner.os == 'Windows'
         run: |
@@ -146,8 +151,6 @@ jobs:
           exit $LASTEXITCODE
       - name: Verify expected packages and assemble binaries WITH LGPL source
         run: node scripts/ci/native.mjs collect
-      - name: Native UI smoke with separate test-only executable
-        run: node scripts/ci/smoke.mjs
       # Paired unsigned test packages/source: owner-authorized repository variable.
       # Fork PRs may test code but may not publish native packages.
       - name: Upload paired native packages, corresponding source and notices
@@ -159,6 +162,10 @@ jobs:
           retention-days: 1
           if-no-files-found: error
           compression-level: 6
+      # Preserve independently verified packages even if additional UI smoke fails.
+      # Smoke remains required and still fails the job; it cannot alter these files.
+      - name: Native UI smoke with separate test-only executable
+        run: node scripts/ci/smoke.mjs
       - name: Preserve scoped build diagnostics, never an unpaired binary
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

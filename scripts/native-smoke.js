@@ -28,16 +28,28 @@
     check('explicit null resets end boundary', (await invoke('snapshot')).jobs[0].trim_end === null, true);
     await invoke('update_job', {id, trim_end: 1.25});
     const path = await invoke('preview_job', {id});
-    const response=await fetch(window.__TAURI_INTERNALS__.convertFileSrc(path));
+    const src = window.__TAURI_INTERNALS__.convertFileSrc(path);
+    const response=await fetch(src);
     const media=await response.blob();
     check('scoped asset returns WAV bytes',response.ok&&media.size>1000,{status:response.status,type:media.type,size:media.size});
-    const audio = new Audio(URL.createObjectURL(media));
-    await new Promise((resolve, reject) => {audio.onloadedmetadata = resolve; audio.onerror = () => reject(new Error('asset preview media failed ' + JSON.stringify({path,src:audio.src,code:audio.error?.code,message:audio.error?.message,policyViolations}))); setTimeout(()=>reject(new Error('preview metadata timeout')),8000);});
+    // Match production: only Linux uses Blob playback; native targets use assets.
+    const previewSrc = /Linux/.test(navigator.userAgent) ? URL.createObjectURL(media) : src;
+    const audio = new Audio();
+    await new Promise((resolve, reject) => {
+      const timer=setTimeout(()=>reject(new Error('preview metadata timeout')),8000);
+      audio.onloadedmetadata = () => {clearTimeout(timer);resolve();};
+      audio.onerror = () => {clearTimeout(timer);reject(new Error('asset preview media failed ' + JSON.stringify({path,src:audio.src,code:audio.error?.code,message:audio.error?.message,policyViolations})));};
+      audio.src = previewSrc; audio.load();
+    });
     check('scoped decoded preview loads', audio.duration > 1.9 && audio.duration < 2.1, audio.duration);
-    audio.currentTime = 0.75;
-    await new Promise((resolve,reject)=>{audio.onseeked=resolve;setTimeout(()=>reject(new Error('seek timeout')),5000)});
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('seek timeout')),5000);
+      audio.onseeked=()=>{clearTimeout(timer);resolve();};
+      audio.currentTime = 0.75;
+    });
     check('native webview seek', Math.abs(audio.currentTime-0.75)<0.02, audio.currentTime);
     audio.pause(); audio.removeAttribute('src'); audio.load();
+    if(previewSrc!==src)URL.revokeObjectURL(previewSrc);
     await invoke('start_queue');
     const started = Date.now();
     do {await delay(50);s=await invoke('snapshot');if(Date.now()-started>10000)throw new Error('conversion timeout')}while(s.running);

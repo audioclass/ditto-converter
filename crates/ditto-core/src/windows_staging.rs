@@ -39,7 +39,7 @@ use windows_sys::Win32::{
         INVALID_HANDLE_VALUE,
     },
     Security::{
-        Authorization::{GetSecurityInfo, SE_FILE_OBJECT},
+        Authorization::{ConvertSidToStringSidW, GetSecurityInfo, SE_FILE_OBJECT},
         *,
     },
     Storage::FileSystem::*,
@@ -74,9 +74,32 @@ impl Drop for Local {
     }
 }
 
+// Numeric SIDs avoid account-name lookup/ambiguity. Failure to format a SID
+// must never change a security decision or turn a rejected object into success.
+fn sid_text(sid: PSID) -> String {
+    unsafe {
+        if sid.is_null() || IsValidSid(sid) == 0 {
+            return "<missing or invalid>".into();
+        }
+        let mut text = ptr::null_mut();
+        if ConvertSidToStringSidW(sid, &mut text) == 0 {
+            return "<unavailable>".into();
+        }
+        let _text = Local(text.cast());
+        // A Windows SID has at most 15 subauthorities; its SDDL spelling fits
+        // within 192 UTF-16 units, including the terminator.
+        let mut length = 0;
+        while length < 192 && *text.add(length) != 0 {
+            length += 1;
+        }
+        String::from_utf16_lossy(std::slice::from_raw_parts(text, length))
+    }
+}
+
 struct Identity {
     user: Vec<u32>,
     admin_owner: bool,
+    default_owner: String,
     installer: Option<Vec<u32>>,
 }
 impl Identity {
@@ -109,6 +132,7 @@ impl Identity {
             Ok(Self {
                 user: copy,
                 admin_owner: IsWellKnownSid(owner, WinBuiltinAdministratorsSid) != 0,
+                default_owner: sid_text(owner),
                 installer: installer_sid(),
             })
         }
@@ -345,16 +369,34 @@ fn security(file: &File, id: &Identity, private: bool, ancestor: bool) -> Result
             return Err(std::io::Error::from_raw_os_error(status as i32).into());
         }
         let _sd = Local(sd);
+        let role = if ancestor {
+            "ancestor"
+        } else if private {
+            "private object"
+        } else {
+            "audio object"
+        };
         if owner.is_null()
             || !(if ancestor {
                 id.trusted(owner)
             } else {
                 id.owner(owner)
             })
-            || acl.is_null()
-            || IsValidAcl(acl) == 0
         {
-            return Err(invalid("Windows staging ownership or DACL mismatch"));
+            return Err(invalid(&format!(
+                "Windows staging ownership mismatch at {:?}: owner={}, token_user={}, token_default_owner={}, role={role}",
+                file_path(file)?,
+                sid_text(owner),
+                sid_text(id.user.as_ptr() as PSID),
+                id.default_owner,
+            )));
+        }
+        if acl.is_null() || IsValidAcl(acl) == 0 {
+            return Err(invalid(&format!(
+                "Windows staging {} DACL at {:?}: role={role}",
+                if acl.is_null() { "null" } else { "invalid" },
+                file_path(file)?,
+            )));
         }
         let directory = file.metadata()?.is_dir();
         let mut details: ACL_SIZE_INFORMATION = zeroed();
@@ -619,6 +661,108 @@ mod tests {
                 "accepted unrelated owner SID type {kind}"
             );
         }
+    }
+
+    #[test]
+    fn registration_accepts_native_inherited_project_journal_storage() {
+        // Same unmodified inheritance and .work ancestor chain as integrated.rs.
+        // No fixture DACL or owner replacement may conceal the native regression.
+        let work = Path::new(env!("CARGO_MANIFEST_DIR")).join(r"..\..\.work");
+        let work = work.canonicalize().unwrap();
+        let dir = tempfile::Builder::new()
+            .prefix("windows-registration-")
+            .tempdir_in(work)
+            .unwrap();
+        let journal_dir = dir.path().join("export-journals");
+        fs::create_dir(&journal_dir).unwrap();
+        let guards = registration(&journal_dir).unwrap();
+        drop(guards);
+    }
+
+    #[test]
+    fn native_created_file_owner_matches_the_process_default_owner() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let id = Identity::current().unwrap();
+        unsafe {
+            let mut owner = ptr::null_mut();
+            let mut sd = ptr::null_mut();
+            assert_eq!(
+                GetSecurityInfo(
+                    file.as_file().as_raw_handle(),
+                    SE_FILE_OBJECT,
+                    OWNER_SECURITY_INFORMATION,
+                    &mut owner,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut sd,
+                ),
+                0
+            );
+            let _sd = Local(sd);
+            assert_eq!(sid_text(owner), id.default_owner);
+            assert!(
+                id.owner(owner),
+                "native owner={}, token_user={}, token_default_owner={}",
+                sid_text(owner),
+                sid_text(id.user.as_ptr() as PSID),
+                id.default_owner,
+            );
+        }
+    }
+
+    #[test]
+    fn administrators_owner_requires_the_process_default_owner_to_be_administrators() {
+        let mut id = Identity::current().unwrap();
+        let mut admin = [0u32; 17];
+        let mut len = std::mem::size_of_val(&admin) as u32;
+        unsafe {
+            win(CreateWellKnownSid(
+                WinBuiltinAdministratorsSid,
+                ptr::null_mut(),
+                admin.as_mut_ptr().cast(),
+                &mut len,
+            ))
+            .unwrap();
+        }
+        // Administrative write access alone never establishes ownership.
+        id.admin_owner = false;
+        assert!(!id.owner(admin.as_mut_ptr().cast()));
+        id.admin_owner = true;
+        assert!(id.owner(admin.as_mut_ptr().cast()));
+    }
+
+    #[test]
+    fn ownership_failure_identifies_the_pinned_object_and_token_sids() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut id = Identity::current().unwrap();
+        let mut unrelated = vec![0u32; 17];
+        let mut len = std::mem::size_of_val(unrelated.as_slice()) as u32;
+        unsafe {
+            win(CreateWellKnownSid(
+                WinWorldSid,
+                ptr::null_mut(),
+                unrelated.as_mut_ptr().cast(),
+                &mut len,
+            ))
+            .unwrap();
+        }
+        id.user = unrelated;
+        id.admin_owner = false;
+        let error = security(file.as_file(), &id, true, false)
+            .unwrap_err()
+            .to_string();
+        for expected in [
+            "Windows staging ownership mismatch",
+            "owner=S-1-",
+            "token_user=S-1-1-0",
+            "token_default_owner=S-1-",
+            "role=private object",
+            file.path().file_name().unwrap().to_str().unwrap(),
+        ] {
+            assert!(error.contains(expected), "missing {expected:?}: {error}");
+        }
+        assert_eq!(file.as_file().metadata().unwrap().len(), 0);
     }
 
     #[test]

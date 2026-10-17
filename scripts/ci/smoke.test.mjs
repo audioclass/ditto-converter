@@ -52,6 +52,14 @@ test('required checks stay aligned with the real embedded offline smoke script',
   assert.deepEqual(requiredChecks,actual);
 });
 
+test('native smoke previews direct assets on Windows/macOS, matching production',()=>{
+  const script=readFileSync(new URL('../native-smoke.js',import.meta.url),'utf8');
+  assert.match(script,/const src = window\.__TAURI_INTERNALS__\.convertFileSrc\(path\)/);
+  assert.match(script,/const previewSrc = \/Linux\/\.test\(navigator\.userAgent\) \? URL\.createObjectURL\(media\) : src/);
+  assert.match(script,/audio\.src = previewSrc/);
+  assert.doesNotMatch(script,/new Audio\(URL\.createObjectURL\(media\)\)/);
+});
+
 test('report validation requires every existing offline native harness check', async () => {
   const {validateReport, requiredChecks} = await import('./smoke.mjs');
   const report = {passed:true, output:'/export/source.wav', userAgent:'native webview', checks:requiredChecks.map(name=>({name,ok:true}))};
