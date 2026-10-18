@@ -12,6 +12,7 @@ export const requiredChecks = [
   'explicit null resets end boundary', 'scoped asset returns WAV bytes',
   'scoped decoded preview loads', 'native webview seek', 'real helper export completed',
   'completed row selection preserves export', 'exact-target queue removal',
+  'crowded queue scroll stays inside workspace', 'error banner preserves footer',
 ];
 export function validateReport(report) {
   if (!report || report.passed !== true || !Array.isArray(report.checks) || report.checks.some(c => !c || c.ok !== true)) {

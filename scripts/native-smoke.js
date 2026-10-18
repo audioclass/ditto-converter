@@ -70,6 +70,53 @@
     check('completed row selection preserves export',!completedSelection.selected&&completedSelection.output===output,true);
     await invoke('remove_job', {id});
     check('exact-target queue removal', (await invoke('snapshot')).jobs.length===0, true);
+    // Exercise the real renderer in the native webview at a short container
+    // height. Only this opt-in test build constrains the app container or
+    // supplies controlled error text; production gains no test hooks.
+    await invoke('add_files', {paths: Array(11).fill(cfg.input)});
+    const layoutStarted = Date.now();
+    while (document.querySelectorAll('.queue-row').length !== 11) {
+      if (Date.now()-layoutStarted > 5000) throw new Error('layout queue render timeout');
+      await delay(50);
+    }
+    const appRoot = document.getElementById('app');
+    const banner = document.getElementById('error-banner');
+    const previousHeight = appRoot.style.height;
+    const previousFlex = appRoot.style.flex;
+    const previousError = document.getElementById('error-text').textContent;
+    const previousHidden = banner.hidden;
+    try {
+      appRoot.style.height = '600px';
+      appRoot.style.flex = '0 0 600px';
+      await delay(50);
+      const measure = () => {
+        const rect = selector => document.querySelector(selector).getBoundingClientRect();
+        const main = rect('main'), workspace = rect('.workspace'), queue = rect('.queue-body'), footer = rect('.export-bar');
+        const queueElement = document.querySelector('.queue-body');
+        queueElement.scrollTop = queueElement.scrollHeight;
+        const scroll = queueElement.scrollTop;
+        const footerHits = [];
+        for (let y=footer.top+5;y<Math.min(footer.bottom,innerHeight);y+=10) {
+          for (let x=40;x<workspace.right;x+=30) {
+            if (document.elementFromPoint(x,y)?.closest('.queue-row')) footerHits.push({x,y});
+          }
+        }
+        return {mainBottom:main.bottom,workspaceBottom:workspace.bottom,queueBottom:queue.bottom,footerTop:footer.top,footerBottom:footer.bottom,rootBottom:appRoot.getBoundingClientRect().bottom,scroll,footerHits};
+      };
+      let layout = measure();
+      check('crowded queue scroll stays inside workspace', layout.scroll>0&&layout.workspaceBottom<=layout.mainBottom+1&&layout.queueBottom<=layout.footerTop+1&&layout.footerBottom<=layout.rootBottom+1&&!layout.footerHits.length, layout);
+      document.getElementById('error-text').textContent = 'Controlled layout diagnostic. '.repeat(40);
+      banner.hidden = false;
+      await delay(50);
+      layout = measure();
+      check('error banner preserves footer', layout.footerBottom<=layout.rootBottom+1&&layout.queueBottom<=layout.footerTop+1&&!layout.footerHits.length, layout);
+    } finally {
+      appRoot.style.height = previousHeight;
+      appRoot.style.flex = previousFlex;
+      document.getElementById('error-text').textContent = previousError;
+      banner.hidden = previousHidden;
+      for (const job of (await invoke('snapshot')).jobs) await invoke('remove_job', {id:job.id});
+    }
     if(cfg.online){
       await invoke('install_components');
       const info=await invoke('component_info');

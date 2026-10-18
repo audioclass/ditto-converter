@@ -52,6 +52,14 @@ test('required checks stay aligned with the real embedded offline smoke script',
   assert.deepEqual(requiredChecks,actual);
 });
 
+test('native smoke requires crowded-queue and short error-layout regressions', async () => {
+  const {requiredChecks} = await import('./smoke.mjs');
+  assert.ok(requiredChecks.includes('crowded queue scroll stays inside workspace'));
+  assert.ok(requiredChecks.includes('error banner preserves footer'));
+  const script = readFileSync(new URL('../native-smoke.js', import.meta.url), 'utf8');
+  assert.match(script, /appRoot\.style\.flex = '0 0 600px'/);
+});
+
 test('native smoke previews direct assets on Windows/macOS, matching production',()=>{
   const script=readFileSync(new URL('../native-smoke.js',import.meta.url),'utf8');
   assert.match(script,/const src = window\.__TAURI_INTERNALS__\.convertFileSrc\(path\)/);
