@@ -4,6 +4,15 @@ import { readFileSync } from 'node:fs';
 
 const config = JSON.parse(readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
 
+test('main window centers within the workarea after startup overflow fitting', () => {
+  const main = config.app.windows.find((window: { label: string }) => window.label === 'main');
+  assert.ok(main, 'the main native window must be configured');
+  // Pinned tauri-runtime-wry 2.12.2 resizes for preventOverflow but only positions
+  // for center; calculate_window_center_position uses the workarea, not monitor size.
+  assert.equal(main.center, true,
+    'startup must reposition the fitted window instead of retaining OS-default placement');
+});
+
 test('main window opts into startup workarea fitting without weakening its size constraints', () => {
   const main = config.app.windows.find((window: { label: string }) => window.label === 'main');
   assert.ok(main, 'the main native window must be configured');
