@@ -9,6 +9,8 @@
     "build": "tsc -p ui/tsconfig.json && vite build --config ui/vite.config.ts",
     "preview": "vite preview --config ui/vite.config.ts",
     "tauri": "tauri",
+    "prepare:dependencies": "node scripts/prepare-remediation.mjs",
+    "prebuild:desktop": "node scripts/prepare-remediation.mjs",
     "build:desktop": "tauri build --features desktop",
     "test": "node --experimental-strip-types --test ui/tests/*.test.ts"
   },

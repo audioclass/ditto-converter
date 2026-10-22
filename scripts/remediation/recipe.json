@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "variant": "ditto-cfusernotification-no-optional-flag-helpers-v1",
+  "name": "objc2-core-foundation",
+  "version": "0.3.2",
+  "registry_archive_url": "https://static.crates.io/crates/objc2-core-foundation/objc2-core-foundation-0.3.2.crate",
+  "registry_archive_sha256": "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536",
+  "file": "src/user_notification.rs",
+  "original_sha256": "c8319620dbc1d9667c3bf2fd3cce821f82814b594308c8eebe6bd49e0fe42af6",
+  "replacement_sha256": "444239beba425e33fa8d36529e7745b48316165033e191c924997eac1ee04e94",
+  "replacement_file": "user_notification.rs",
+  "output": ".work/dependency-remediation/objc2-core-foundation-0.3.2",
+  "commit": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+  "path_in_vcs": "framework-crates/objc2-core-foundation"
+}

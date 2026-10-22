@@ -94,6 +94,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $rustInfo
           if (-not ($rustInfo -contains 'host: ${{ matrix.target }}')) { throw 'Rust host is not the expected native target' }
+      - name: Prepare exact reviewed dependency source
+        run: node scripts/prepare-remediation.mjs
       - name: Windows ownership and journal registration regressions
         if: runner.os == 'Windows'
         run: |
@@ -157,7 +159,11 @@ jobs:
         run: |
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs scripts/ci/notices.test.mjs
+          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs scripts/ci/notices.test.mjs scripts/ci/remediation.test.mjs scripts/ci/remediation-package.test.mjs
+          exit $LASTEXITCODE
+      - name: Exact dependency reconstruction regressions
+        run: |
+          python scripts/test-remediation.py
           exit $LASTEXITCODE
       - name: Inventory dependencies and stage available third-party notices
         run: node scripts/ci/native.mjs inventories
@@ -165,6 +171,13 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           node scripts/ci/notices.mjs x86_64-pc-windows-msvc src-tauri/resources/notices/dependencies .work/ci/mpl-corresponding-source
+          $result = $LASTEXITCODE
+          if (Test-Path src-tauri/resources/notices/dependencies/native-notice-report.json) { Copy-Item src-tauri/resources/notices/dependencies/native-notice-report.json .work/ci/evidence/native-notice-report.json }
+          exit $result
+      - name: Stage full macOS target notices and pair MPL source before packaging
+        if: runner.os == 'macOS'
+        run: |
+          node scripts/ci/notices.mjs aarch64-apple-darwin src-tauri/resources/notices/dependencies .work/ci/mpl-corresponding-source
           $result = $LASTEXITCODE
           if (Test-Path src-tauri/resources/notices/dependencies/native-notice-report.json) { Copy-Item src-tauri/resources/notices/dependencies/native-notice-report.json .work/ci/evidence/native-notice-report.json }
           exit $result
@@ -190,9 +203,9 @@ jobs:
       # Smoke remains required and still fails the job; it cannot alter these files.
       - name: Native UI smoke with separate test-only executable
         run: node scripts/ci/smoke.mjs
-      # Build/UI evidence remains useful, but macOS binaries must not be made
-      # public while the pinned objc2 upstream notice/SDK-rights gate is unresolved.
-      - name: macOS publication-rights gate (no binary upload)
+      # Revalidate the exact reviewed notice/source variant after smoke.
+      # Passing this check does not authorize macOS binary uploads.
+      - name: macOS notice/source revalidation (no binary upload)
         if: runner.os == 'macOS'
         run: |
           node scripts/ci/notices.mjs aarch64-apple-darwin src-tauri/resources/notices/dependencies .work/ci/mpl-corresponding-source

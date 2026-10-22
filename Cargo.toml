@@ -7,3 +7,7 @@ lto = true
 codegen-units = 1
 strip = true
 opt-level = "s"
+
+# Reconstruct before any Cargo command; exact archive and one-file variant are verified.
+[patch.crates-io]
+objc2-core-foundation = { path = ".work/dependency-remediation/objc2-core-foundation-0.3.2" }

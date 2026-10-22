@@ -7,3 +7,5 @@
 *.yml text eol=lf
 *.json text eol=lf
 *.png binary
+# Authentic recovered notices are byte-pinned; never normalize their bytes.
+scripts/remediation/notices/* -text

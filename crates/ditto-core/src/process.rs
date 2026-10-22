@@ -163,7 +163,14 @@ impl OwnedChild {
             {
                 return Err(io::Error::last_os_error());
             }
-            if info.si_pid() == 0 {
+            // Darwin can report a stopped child even with WEXITED. Only a
+            // terminal notification permits tree termination and reaping.
+            if info.si_pid() == 0
+                || !matches!(
+                    info.si_code,
+                    libc::CLD_EXITED | libc::CLD_KILLED | libc::CLD_DUMPED
+                )
+            {
                 return Ok(None);
             }
             self.terminate_tree();

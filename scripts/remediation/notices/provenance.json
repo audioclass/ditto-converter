@@ -1,0 +1,205 @@
+{
+  "schema": 1,
+  "scope": "Finite exact-version notice packaging; historical and later grants unmodified. No exhaustive ownership or SDK-wide license claim.",
+  "files": [
+    {
+      "file": "pinned-upstream-LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+      "immutable_sources": [
+        "https://raw.githubusercontent.com/madsmtm/objc2/b4167b582b2f75f9a1be75495c41b765344fd03c/LICENSE.md",
+        "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/LICENSE.md",
+        "https://raw.githubusercontent.com/madsmtm/objc2/d7d2fa23ceaa5e6096c923b081040e5d81b3b9df/LICENSE.md",
+        "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+        "https://raw.githubusercontent.com/madsmtm/objc2/8d214f5477365ffcbcbb7de058c86ed9a518efb7/LICENSE.md"
+      ],
+      "packages": [
+        {
+          "name": "block2",
+          "version": "0.6.2",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "dispatch2",
+          "version": "0.3.1",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2",
+          "version": "0.6.5",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2-app-kit",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-core-foundation",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-encode",
+          "version": "4.1.0",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2-exception-helper",
+          "version": "0.1.1",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-foundation",
+          "version": "0.3.2",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2-quartz-core",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-web-kit",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        }
+      ]
+    },
+    {
+      "file": "MIT-Steven-Sheldon.txt",
+      "sha256": "e353f37b12aefbb9f9b29490e837cfee05d9bda70804b3562839a3285c1df1e5",
+      "immutable_sources": [
+        "https://raw.githubusercontent.com/madsmtm/objc2/757cd841d0293341dbefd9b99d7548dec244ffde/LICENSE.txt"
+      ],
+      "packages": [
+        {
+          "name": "block2",
+          "version": "0.6.2",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2",
+          "version": "0.6.5",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2-encode",
+          "version": "4.1.0",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2-foundation",
+          "version": "0.3.2",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        }
+      ]
+    },
+    {
+      "file": "MIT-Mads-Marquart-2026.txt",
+      "sha256": "f6a2e783669a0dd7a2c3b8a4f76db40ae49033e66e1bdc30f3aa25fe5577b070",
+      "immutable_sources": [
+        "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt"
+      ],
+      "packages": [
+        {
+          "name": "block2",
+          "version": "0.6.2",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2",
+          "version": "0.6.5",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2-encode",
+          "version": "4.1.0",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        },
+        {
+          "name": "objc2-foundation",
+          "version": "0.3.2",
+          "declared_license": "MIT",
+          "selected_license": "MIT"
+        }
+      ]
+    },
+    {
+      "file": "LICENSE-ZLIB.txt",
+      "sha256": "fced3e7fedc235fa83ed0108b0df74d86b435d06436356f46917a903cbadd80a",
+      "immutable_sources": [
+        "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-ZLIB.txt"
+      ],
+      "packages": [
+        {
+          "name": "dispatch2",
+          "version": "0.3.1",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-app-kit",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-core-foundation",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-exception-helper",
+          "version": "0.1.1",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-quartz-core",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        },
+        {
+          "name": "objc2-web-kit",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        }
+      ]
+    },
+    {
+      "file": "Apple-WebKit-WKWebView-BSD.txt",
+      "sha256": "01ea883058077c0b1bb16c555dc7ce82d5141ed284166d7aec7898570dee8d13",
+      "immutable_sources": [
+        "https://raw.githubusercontent.com/WebKit/WebKit/ed6dc7d8e3a5e1cf4332cbeb55ded19391dacbf6/Source/WebKit/UIProcess/API/Cocoa/WKWebView.h"
+      ],
+      "packages": [
+        {
+          "name": "objc2-web-kit",
+          "version": "0.3.2",
+          "declared_license": "Zlib OR Apache-2.0 OR MIT",
+          "selected_license": "Zlib"
+        }
+      ]
+    }
+  ]
+}

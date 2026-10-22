@@ -6,6 +6,8 @@ A focused Rust/Tauri desktop utility for preparing local audio and authorized on
 
 This is experimental software, not a signed consumer release. Native Windows x64 and Apple Silicon macOS builds are being validated by the repository's **Native Windows and Apple Silicon** GitHub Actions workflow. Check the exact commit's run rather than assuming a passing badge or historical report establishes support.
 
+**Source checkpoint — October 21, 2026 EDT:** the combined private Apple Silicon production build, reviewed dependency/notice remediation, source pairing, automated tests, 14 native smoke checks and final consumer cancellation/trim/retry follow-up passed for a retained source export. Later documentation/workflow-label edits are not that exact tested export. Fresh Windows regression of the combined source is next, followed by owner hands-on UX/UI testing and fixes. This checkpoint is not a release and does not enable Mac binary uploads. See [acceptance boundaries](docs/ACCEPTANCE.md).
+
 The application implements a shared review queue, local conversion, nondestructive trim and preview, collision-safe exports, and optional app-managed online tools. Output is classic mono 44.1 kHz 24-bit PCM WAV. **No generated output has been tested on a physical Ditto+ pedal.** Native compilation, automated tests, installation, audible playback and hardware compatibility are distinct acceptance categories.
 
 ## Build and test

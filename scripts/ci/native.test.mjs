@@ -96,13 +96,28 @@ test('macOS corpus uses the full keg-only FFmpeg fixture generator',()=>{
  assert.match(workflow,/path: \$\{\{ matrix.workdir \}\}\/\.work\/ci\/deliverables\//);
  assert.match(workflow,/cargo test -p ditto-core --lib staging::windows::tests --locked/);
  });
-test('unresolved macOS rights cannot publish binaries while build/smoke still execute',()=>{
+test('macOS uploads remain disabled while build/smoke and notice revalidation execute',()=>{
  const workflow=readFileSync(join(root,'.github/workflows/native.yml'),'utf8');
  assert.match(workflow,/if: runner.os == 'Windows' && github.event_name != 'pull_request' && vars.DITTO_NATIVE_PACKAGE_UPLOAD_AUTHORIZED == 'true'/);
- assert.ok(workflow.indexOf('macOS publication-rights gate')>workflow.indexOf('node scripts/ci/smoke.mjs'));
+ assert.ok(workflow.indexOf('macOS notice/source revalidation')>workflow.indexOf('node scripts/ci/smoke.mjs'));
  assert.match(workflow,/node scripts\/ci\/notices.mjs aarch64-apple-darwin/);
  assert.match(workflow,/node scripts\/ci\/notices.mjs x86_64-pc-windows-msvc/);
  assert.doesNotMatch(workflow,/continue-on-error/);
+});
+test('full Mac notices and paired MPL sources are staged after inventory but before package build',()=>{
+ const workflow=readFileSync(join(root,'.github/workflows/native.yml'),'utf8');
+ const inventory=workflow.indexOf('node scripts/ci/native.mjs inventories');
+ const collector=workflow.indexOf('node scripts/ci/notices.mjs aarch64-apple-darwin');
+ const build=workflow.indexOf('npm run build:desktop');
+ const collect=workflow.indexOf('node scripts/ci/native.mjs collect');
+ assert.ok(inventory<collector&&collector<build&&build<collect,'inventory -> full Mac collector -> package build -> exact package collection');
+ const stage=workflow.slice(workflow.lastIndexOf('      - name:',collector),workflow.indexOf('      - name:',collector));
+ assert.match(stage,/if: runner.os == 'macOS'/);
+ assert.match(stage,/aarch64-apple-darwin src-tauri\/resources\/notices\/dependencies .work\/ci\/mpl-corresponding-source/);
+ assert.match(stage,/Copy-Item .*native-notice-report.json .work\/ci\/evidence\/native-notice-report.json/);
+ assert.match(stage,/exit \$result/);
+ assert.equal([...workflow.matchAll(/node scripts\/ci\/notices.mjs aarch64-apple-darwin/g)].length,2,'retain final notice/source revalidation');
+ assert.match(workflow,/if: runner.os == 'Windows' && github.event_name != 'pull_request' && vars.DITTO_NATIVE_PACKAGE_UPLOAD_AUTHORIZED == 'true'/);
 });
 test('native source pin matches existing audited Linux source pin',()=>{
  const a=readFileSync(join(root,'scripts/toolchain/build-ffmpeg.sh'),'utf8');

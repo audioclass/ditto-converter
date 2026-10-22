@@ -4,6 +4,7 @@ import {dirname,join,resolve,relative,basename,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {prepareRemediation} from '../prepare-remediation.mjs';
 const digest=b=>createHash('sha256').update(b).digest('hex');
 const key=p=>`${p.name}@${p.version}`;
 const json=(p,d)=>{mkdirSync(dirname(p),{recursive:true});writeFileSync(p,JSON.stringify(d,null,2)+'\n');};
@@ -11,10 +12,16 @@ const safe=s=>{if(!/^[A-Za-z0-9_.+-]+$/.test(s)||s==='.'||s==='..')throw Error(`
 function inside(base,p){const r=relative(realpathSync(base),realpathSync(p));if(isAbsolute(r)||r==='..'||r.startsWith('../')||r.startsWith('..\\'))throw Error(`Notice escapes source: ${p}`);return p;}
 export function parseCargoTree(text){return new Set(text.split(/\r?\n/).filter(Boolean).map(line=>{const m=/^([\w-]+) v([^\s]+)(?:\s|$)/.exec(line);if(!m)throw Error(`Invalid cargo tree line: ${line}`);return `${m[1]}@${m[2]}`;}));}
 async function network(url){const res=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(30000)});if(!res.ok)throw Error(`Notice HTTP ${res.status}: ${url}`);const chunks=[];let size=0;for await(const chunk of res.body){size+=chunk.length;if(size>16*1024*1024)throw Error('Notice/source exceeds size limit');chunks.push(chunk);}return Buffer.concat(chunks);}
-async function pinnedBytes(pin,fetcher,cacheDir){
+async function pinnedBytes(pin,fetcher,cacheDir,root){
  if(!/^[a-f0-9]{64}$/.test(pin.sha256))throw Error('Invalid SHA256 pin');
  const u=new URL(pin.url);
  if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash||!((u.hostname==='raw.githubusercontent.com'&&/^\/[^/]+\/[^/]+\/[a-f0-9]{40}\//.test(u.pathname))||(u.hostname==='static.crates.io'&&/^\/crates\/[^/]+\/[^/]+\.crate$/.test(u.pathname))))throw Error(`Non-immutable notice URL: ${pin.url}`);
+ if(pin.local_file){
+  if(!root||!/^scripts\/remediation\/notices\/[A-Za-z0-9_.+-]+$/.test(pin.local_file))throw Error('Unsafe local notice provenance');
+  const b=readFileSync(inside(root,join(root,pin.local_file)));
+  if(digest(b)!==pin.sha256)throw Error(`SHA256 mismatch: ${pin.local_file}`);
+  return b;
+ }
  const cache=cacheDir?join(cacheDir,pin.sha256):null;
  const b=cache&&existsSync(cache)?readFileSync(cache):Buffer.from(await fetcher(pin.url));
  if(digest(b)!==pin.sha256)throw Error(`SHA256 mismatch: ${pin.url}`);
@@ -35,18 +42,30 @@ export async function collectNotices({root,destination,sourceDestination,metadat
    const dir=join(destination,'cargo',safe(`${p.name}-${p.version}`)),base=dirname(p.manifest_path);
    mkdirSync(dir,{recursive:true});
    const copy=(file,name)=>{const b=readFileSync(file);if(!b.length)throw Error('Empty license notice');writeFileSync(join(dir,safe(name)),b);item.notices.push({file:name,sha256:digest(b)});};
-   if(!p.source&&metadata.workspace_members.includes(p.id)&&p.license==='MIT'){copy(inside(root,join(root,'LICENSE')),'LICENSE');item.notice_provenance='Original workspace application code; root LICENSE';}
+   const pin=pins.crates.find(n=>key(n)===key(p));
+   if(!pin&&!p.source&&metadata.workspace_members.includes(p.id)&&p.license==='MIT'){copy(inside(root,join(root,'LICENSE')),'LICENSE');item.notice_provenance='Original workspace application code; root LICENSE';}
    else {
     if(existsSync(base)){
      for(const f of readdirSync(base))if(/^(LICENSE|LICENCE|COPYING|COPYRIGHT|NOTICE)([._-]|$)/i.test(f)&&statSync(join(base,f)).isFile())copy(inside(base,join(base,f)),f);
      if(p.license_file){const f=inside(base,resolve(base,p.license_file));if(!item.notices.some(n=>n.file===basename(f)))copy(f,basename(f));}
     }
-    const pin=pins.crates.find(n=>key(n)===key(p));
     if(pin){
      const vcs=JSON.parse(readFileSync(join(base,'.cargo_vcs_info.json'),'utf8'));
-     if(p.source!=='registry+https://github.com/rust-lang/crates.io-index'||p.repository!==pin.repository||p.license!==pin.license||vcs.git.sha1!==pin.commit||vcs.path_in_vcs!==pin.path_in_vcs)throw Error(`Pin provenance mismatch: ${key(p)}`);
-     item.upstream={repository:pin.repository,commit:pin.commit,path_in_vcs:pin.path_in_vcs,status:pin.status,reason:pin.reason};
-     for(const n of pin.notices){const u=new URL(n.url);const expected=pin.repository.replace('https://github.com/','https://raw.githubusercontent.com/')+'/'+pin.commit+'/';if(!n.license_text_provenance&&!n.url.startsWith(expected))throw Error('Notice repository provenance mismatch');const b=await pinnedBytes(n,fetcher,cacheDir);writeFileSync(join(dir,safe(n.filename)),b);item.notices.push({file:n.filename,sha256:digest(b),url:u.href,license_text_provenance:n.license_text_provenance});}
+     if(p.repository!==pin.repository||p.license!==pin.license||vcs.git.sha1!==pin.commit||vcs.path_in_vcs!==pin.path_in_vcs)throw Error(`Pin provenance mismatch: ${key(p)}`);
+     if(pin.source_variant){
+      const variant=pin.source_variant;
+      if(p.source!==null||resolve(p.manifest_path)!==resolve(root,variant.output,'Cargo.toml'))throw Error(`Patched source provenance mismatch: ${key(p)}`);
+      const verified=prepareRemediation({root,verify:true});
+      if(verified.name!==p.name||verified.version!==p.version||verified.archive_sha256!==pin.registry_archive_sha256||Object.entries(variant).some(([k,v])=>verified[k]!==v))throw Error(`Patched variant provenance mismatch: ${key(p)}`);
+      item.source_variant=verified;
+     }else if(p.source!=='registry+https://github.com/rust-lang/crates.io-index')throw Error(`Pin provenance mismatch: ${key(p)}`);
+     if(pin.registry_archive_sha256){
+      const blocks=readFileSync(join(root,'Cargo.lock'),'utf8').split(/^\[\[package\]\]\s*$/m).slice(1).map(block=>Object.fromEntries([...block.matchAll(/^(name|version|source|checksum) = "([^"\\\r\n]*)"\s*$/gm)].map(m=>[m[1],m[2]])));
+      const entries=blocks.filter(n=>key(n)===key(p));
+      if(entries.length!==1||(pin.source_variant?(entries[0].source||entries[0].checksum):(entries[0].source!==p.source||entries[0].checksum!==pin.registry_archive_sha256)))throw Error(`Cargo.lock provenance mismatch: ${key(p)}`);
+     }
+     item.upstream={repository:pin.repository,commit:pin.commit,path_in_vcs:pin.path_in_vcs,status:pin.status,reason:pin.reason,selected_license:pin.selected_license};
+     for(const n of pin.notices){const u=new URL(n.url);const expected=pin.repository.replace('https://github.com/','https://raw.githubusercontent.com/')+'/'+pin.commit+'/';if(!n.license_text_provenance&&!n.url.startsWith(expected))throw Error('Notice repository provenance mismatch');const b=await pinnedBytes(n,fetcher,cacheDir,root);writeFileSync(join(dir,safe(n.filename)),b);item.notices.push({file:n.filename,sha256:digest(b),url:u.href,local_file:n.local_file,license_text_provenance:n.license_text_provenance});}
      if(pin.status!=='complete')throw Error(`unresolved upstream notice/rights: ${key(p)}: ${pin.reason??''}`);
     }
    }

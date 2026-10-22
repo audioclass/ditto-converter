@@ -5,6 +5,7 @@ import {spawn, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {machine} from 'node:os';
 import {fileURLToPath} from 'node:url';
+import {prepareRemediation} from '../prepare-remediation.mjs';
 
 export const requiredChecks = [
   'bundled UI rendered', 'native bridge active', 'metadata probe entered queue',
@@ -122,6 +123,7 @@ export function inspectWav(b) {
 // of either the production executable or bundles, including on a failed smoke.
 export async function main() {
   assertNativeHost();
+  prepareRemediation();
   const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
   const ci=join(root,'.work/ci'), evidence=join(ci,'evidence');
   mkdirSync(evidence,{recursive:true});

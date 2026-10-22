@@ -6,6 +6,112 @@ use std::{
     time::Duration,
 };
 
+// The observer is a descendant in run's owned process group. It confirms the
+// leader really stopped before scheduling CONT or announcing cancellation
+// readiness; run must kill it too on every error path. No unrelated PID is used.
+#[cfg(unix)]
+fn stopped_child(action: &str) -> Command {
+    let mut command = Command::new("python3");
+    command.args([
+        "-c",
+        r#"
+import os, signal, subprocess, sys, time
+leader = os.getpid()
+if os.fork() == 0:
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        if os.getppid() != leader:
+            os._exit(2)
+        state = subprocess.run(['ps', '-o', 'stat=', '-p', str(leader)],
+                               capture_output=True, text=True, check=True).stdout.strip()
+        if state.startswith('T'):
+            print('stopped-ready', flush=True)
+            if sys.argv[1] == 'resume':
+                # A deliberate stopped interval exercises multiple production polls.
+                time.sleep(0.15)
+                if os.getppid() == leader:
+                    os.kill(leader, signal.SIGCONT)
+                os._exit(0)
+            # Stay owned until cancellation/deadline terminates the whole group.
+            signal.pause()
+        time.sleep(0.005)
+    os._exit(3)
+os.kill(leader, signal.SIGSTOP)
+print('continued', flush=True)
+_, status = os.wait()
+sys.exit(os.waitstatus_to_exitcode(status))
+"#,
+        action,
+    ]);
+    command
+}
+
+#[test]
+#[cfg(unix)]
+fn stopped_child_resumes_and_finishes_successfully() {
+    let output = run(
+        &mut stopped_child("resume"),
+        &Arc::new(AtomicBool::new(false)),
+        ProcessOptions {
+            timeout: Duration::from_secs(5),
+            max_output: 4096,
+        },
+        |_| {},
+    )
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "stopped child was killed: {output:?}"
+    );
+    assert_eq!(output.stdout, b"stopped-ready\ncontinued\n");
+}
+
+#[test]
+#[cfg(unix)]
+fn stopped_child_cancellation_remains_bounded() {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut ready = Vec::new();
+    let started = std::time::Instant::now();
+    let error = run(
+        &mut stopped_child("cancel"),
+        &cancel,
+        ProcessOptions {
+            timeout: Duration::from_secs(5),
+            max_output: 4096,
+        },
+        |bytes| {
+            ready.extend_from_slice(bytes);
+            if ready.ends_with(b"stopped-ready\n") {
+                cancel.store(true, std::sync::atomic::Ordering::Release);
+            }
+        },
+    )
+    .unwrap_err();
+    assert_eq!(ready, b"stopped-ready\n");
+    assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+    assert!(started.elapsed() < Duration::from_secs(4));
+}
+
+#[test]
+#[cfg(unix)]
+fn stopped_child_deadline_remains_bounded() {
+    let mut ready = Vec::new();
+    let started = std::time::Instant::now();
+    let error = run(
+        &mut stopped_child("deadline"),
+        &Arc::new(AtomicBool::new(false)),
+        ProcessOptions {
+            timeout: Duration::from_secs(2),
+            max_output: 4096,
+        },
+        |bytes| ready.extend_from_slice(bytes),
+    )
+    .unwrap_err();
+    assert_eq!(ready, b"stopped-ready\n");
+    assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+    assert!(started.elapsed() < Duration::from_secs(4));
+}
+
 #[test]
 #[cfg(unix)]
 fn normal_child_exit_does_not_leave_background_descendants() {
