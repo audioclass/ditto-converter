@@ -159,7 +159,7 @@ jobs:
         run: |
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs scripts/ci/smoke-geometry.test.mjs scripts/ci/notices.test.mjs scripts/ci/remediation.test.mjs scripts/ci/remediation-package.test.mjs scripts/ci/ffmpeg-link.test.mjs scripts/ci/startup-recovery.test.mjs
+          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs scripts/ci/smoke-geometry.test.mjs scripts/ci/display-smoke.test.mjs scripts/ci/notices.test.mjs scripts/ci/remediation.test.mjs scripts/ci/remediation-package.test.mjs scripts/ci/ffmpeg-link.test.mjs scripts/ci/startup-recovery.test.mjs
           exit $LASTEXITCODE
       - name: Exact dependency reconstruction regressions
         run: |
@@ -202,7 +202,12 @@ jobs:
       # Preserve independently verified packages even if additional UI smoke fails.
       # Smoke remains required and still fails the job; it cannot alter these files.
       - name: Native UI smoke with separate test-only executable
+        if: runner.os == 'Windows'
         run: node scripts/ci/smoke.mjs
+      - name: macOS native UI smoke in same-caller temporary display mode
+        if: runner.os == 'macOS'
+        timeout-minutes: 45
+        run: python scripts/ci/display-smoke.py
       # Revalidate the exact reviewed notice/source variant after smoke.
       # Passing this check does not authorize macOS binary uploads.
       - name: macOS notice/source revalidation (no binary upload)
