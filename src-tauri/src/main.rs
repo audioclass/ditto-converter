@@ -15,6 +15,9 @@ use std::{
 };
 use tauri::{Emitter, Manager, State};
 
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_geometry;
+
 struct AppState {
     queue: Coordinator,
     pipeline: Arc<NativePipeline>,
@@ -358,6 +361,15 @@ fn open_output(s: State<'_, AppState>) -> Result<(), String> {
     });
     Ok(())
 }
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+#[tauri::command]
+async fn smoke_geometry(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("Main window missing")?;
+    smoke_geometry::snapshot(window).await
+}
+
 #[cfg(feature = "smoke")]
 #[tauri::command]
 fn smoke_window(
@@ -367,15 +379,32 @@ fn smoke_window(
     let window = app
         .get_webview_window("main")
         .ok_or("Main window missing")?;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    smoke_geometry::event("helper-enter", serde_json::json!({"request":size}));
     if let Some((width, height)) = size {
         // Opt-in native tests only: exercise actual short client viewports,
         // including sizes below the ordinary production minimum.
         window
             .set_min_size(Some(tauri::LogicalSize::new(1., 1.)))
             .map_err(|e| e.to_string())?;
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event(
+            "helper-minimum-returned",
+            serde_json::json!({"logical":[1.,1.]}),
+        );
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event(
+            "helper-size-request",
+            serde_json::json!({"logical":[width,height]}),
+        );
         window
             .set_size(tauri::LogicalSize::new(width, height))
             .map_err(|e| e.to_string())?;
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event(
+            "helper-size-returned",
+            serde_json::json!({"logical":[width,height]}),
+        );
     }
     let position = window.outer_position().map_err(|e| e.to_string())?;
     let outer = window.outer_size().map_err(|e| e.to_string())?;
@@ -384,14 +413,21 @@ fn smoke_window(
         .map_err(|e| e.to_string())?
         .ok_or("Monitor missing")?;
     let work = monitor.work_area();
-    Ok(serde_json::json!({
+    let response = serde_json::json!({
         "outer": [position.x, position.y, outer.width, outer.height],
         "work": [work.position.x, work.position.y, work.size.width, work.size.height],
         "fits": i64::from(position.x) >= i64::from(work.position.x)
             && i64::from(position.y) >= i64::from(work.position.y)
             && i64::from(position.x)+i64::from(outer.width) <= i64::from(work.position.x)+i64::from(work.size.width)
             && i64::from(position.y)+i64::from(outer.height) <= i64::from(work.position.y)+i64::from(work.size.height)
-    }))
+    });
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    let response = {
+        let mut response = response;
+        response["diagnostic"] = smoke_geometry::immediate_snapshot(window)?;
+        response
+    };
+    Ok(response)
 }
 
 #[cfg(feature = "smoke")]
@@ -468,6 +504,7 @@ fn fit_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         let outer = window.outer_size()?;
         let inner = window.inner_size()?;
         let work = monitor.work_area().size;
+        let scale = window.scale_factor()?;
         let fit = ditto_app::window_fit::fit_window(
             (config.width, config.height),
             (
@@ -479,12 +516,40 @@ fn fit_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 outer.width.saturating_sub(inner.width),
                 outer.height.saturating_sub(inner.height),
             ),
-            window.scale_factor()?,
+            scale,
+        );
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event(
+            "startup-fit-inputs-request",
+            serde_json::json!({
+                "preferredLogical":[config.width,config.height],
+                "minimumLogical":[config.min_width,config.min_height],
+                "workPhysical":[work.width,work.height],
+                "outerPhysical":[outer.width,outer.height],
+                "innerPhysical":[inner.width,inner.height],
+                "decorationPhysical":[outer.width.saturating_sub(inner.width),outer.height.saturating_sub(inner.height)],
+                "scale":scale, "requestLogical":fit.inner, "minimumRequestLogical":fit.minimum
+            }),
         );
         window.set_min_size(Some(tauri::LogicalSize::new(fit.minimum.0, fit.minimum.1)))?;
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event(
+            "startup-minimum-returned",
+            serde_json::json!({"logical":fit.minimum}),
+        );
         let size = tauri::LogicalSize::new(fit.inner.0, fit.inner.1);
         let physical = size.to_physical::<u32>(window.scale_factor()?);
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event(
+            "startup-size-request",
+            serde_json::json!({"logical":fit.inner}),
+        );
         window.set_size(size)?;
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event(
+            "startup-size-returned",
+            serde_json::json!({"logical":fit.inner}),
+        );
         // set_size may be deferred (GTK). Center the requested decorated size,
         // not the still-hidden window's stale pre-map geometry.
         let origin = monitor.work_area().position;
@@ -502,8 +567,12 @@ fn fit_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     .saturating_sub(outer.height.saturating_sub(inner.height))
                     / 2) as i32,
         ))?;
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        smoke_geometry::event("startup-position-returned", serde_json::json!({}));
     }
     window.show()?;
+    #[cfg(all(feature = "smoke", target_os = "macos"))]
+    smoke_geometry::event("startup-show-returned", serde_json::json!({}));
     Ok(())
 }
 
@@ -517,10 +586,14 @@ fn main() {
                     std::env::var("DITTO_SMOKE_INPUT"),
                     std::env::var("DITTO_SMOKE_OUTPUT"),
                 ) {
-                    let config = serde_json::json!({"input":input,"output":output,"online":std::env::var("DITTO_SMOKE_ONLINE").as_deref()==Ok("1")});
+                    let config = serde_json::json!({"input":input,"output":output,"online":std::env::var("DITTO_SMOKE_ONLINE").as_deref()==Ok("1"),"macosGeometry":cfg!(target_os = "macos")});
                     let script = include_str!("../../scripts/native-smoke.js")
                         .replace("__SMOKE_CONFIG__", &config.to_string())
                         .replace("__LAYOUT_RUNNER__", &include_str!("../../ui/tests/layout-smoke-runner.js").replace("export function", "function"));
+                    #[cfg(target_os = "macos")]
+                    let script = script.replace("__GEOMETRY_DIAGNOSTICS__", &include_str!("../../scripts/smoke-geometry.js").replace("export function", "function"));
+                    #[cfg(not(target_os = "macos"))]
+                    let script = script.replace("__GEOMETRY_DIAGNOSTICS__", "");
                     let _ = webview.eval(script);
                 }
             }
@@ -603,6 +676,12 @@ fn main() {
             Ok(())
         })
         .invoke_handler(|invoke| {
+            #[cfg(all(feature = "smoke", target_os = "macos"))]
+            if invoke.message.command() == "smoke_geometry" {
+                let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+                    tauri::generate_handler![smoke_geometry];
+                return handler(invoke);
+            }
             #[cfg(feature = "smoke")]
             if matches!(invoke.message.command(), "smoke_report" | "smoke_window") {
                 let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =

@@ -4,7 +4,13 @@
   window.__dittoSmokeStarted = true;
   const cfg = __SMOKE_CONFIG__;
   __LAYOUT_RUNNER__
+  __GEOMETRY_DIAGNOSTICS__
   const invoke = window.__TAURI_INTERNALS__.invoke;
+  const geometry = cfg.macosGeometry ? createGeometryDiagnostics(invoke, () => ({
+    inner:[innerWidth,innerHeight], dpr:devicePixelRatio,
+    documentClient:[document.documentElement.clientWidth,document.documentElement.clientHeight],
+    visualViewport:visualViewport ? {width:visualViewport.width,height:visualViewport.height,scale:visualViewport.scale,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop} : null
+  }), () => performance.now()) : null;
   const checks = [];
   const policyViolations=[];
   document.addEventListener('securitypolicyviolation',e=>policyViolations.push({blocked:e.blockedURI,directive:e.violatedDirective}));
@@ -14,7 +20,9 @@
     await delay(500);
     check('bundled UI rendered', document.body.innerText.includes('Your queue'), document.title);
     check('native bridge active', !document.body.innerText.includes('Desktop preview only'), true);
+    if (geometry) await geometry.snapshot('before-first-helper-request', null);
     const startupGeometry = await invoke('smoke_window', {size:null});
+    if (geometry) geometry.record('startup-helper-response', null, startupGeometry);
     check('native startup outer window fits workarea', startupGeometry.fits, startupGeometry);
     await invoke('set_output_dir', {path: cfg.output});
     await invoke('add_files', {paths: [cfg.input]});
@@ -123,12 +131,19 @@
       document.getElementById('trim-form').requestSubmit();
       check('native layout fixture has genuine trim validation error', !!document.getElementById('trim-error').textContent, document.getElementById('trim-error').textContent);
       for (const [width,height] of [[780,420],[856,420],[780,480],[872,480],[780,600],[1080,760]]) {
-        await invoke('smoke_window', {size:[width,height]});
+        if (geometry) await geometry.snapshot('before-resize-request', [width,height]);
+        const helperResponse = await invoke('smoke_window', {size:[width,height]});
+        if (geometry) geometry.record('immediate-helper-response', [width,height], helperResponse);
         const resizing = Date.now();
         while(innerWidth!==width || innerHeight!==height) {
-          if(Date.now()-resizing>3000)throw new Error(`native viewport resize ${width}x${height}: ${innerWidth}x${innerHeight}`);
+          if(Date.now()-resizing>3000) {
+            const resizeError = new Error(`native viewport resize ${width}x${height}: ${innerWidth}x${innerHeight}`);
+            if (geometry) await geometry.snapshot('timeout', [width,height]);
+            throw resizeError;
+          }
           await delay(25);
         }
+        if (geometry) await geometry.snapshot('settled', [width,height]);
         await delay(50);
         const nativeLayout = measureLayout();
         check(`actual native ${width}x${height} crowded/error/footer layout`, Object.values(nativeLayout.checks).every(Boolean), nativeLayout);
@@ -165,8 +180,8 @@
       check('live SoundCloud search returns metadata',found.length>0,{results:found.length,firstTitle:found[0]?.title});
       check('provider review stays acquisition-free',(await invoke('snapshot')).jobs.every(j=>['queued','failed'].includes(j.state)),true);
     }
-    await invoke('smoke_report',{report:{passed:true,checks,output,userAgent:navigator.userAgent}});
+    await invoke('smoke_report',{report:{passed:true,checks,output,userAgent:navigator.userAgent,geometryDiagnostics: geometry?.events}});
   } catch(error) {
-    await invoke('smoke_report',{report:{passed:false,checks,error:String(error),userAgent:navigator.userAgent}});
+    await invoke('smoke_report',{report:{passed:false,checks,error:String(error),userAgent:navigator.userAgent,geometryDiagnostics: geometry?.events}});
   }
 })();

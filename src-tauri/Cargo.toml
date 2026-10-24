@@ -18,7 +18,7 @@ required-features = ["desktop"]
 default = []
 desktop = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-build"]
 custom-protocol = ["tauri/custom-protocol"]
-smoke = ["desktop"]
+smoke = ["desktop", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 
 [dependencies]
 ditto-core = { path = "../crates/ditto-core" }
@@ -29,6 +29,11 @@ thiserror = "2"
 fs2 = "0.4"
 tauri = { version = "~2.12.4", optional = true, features = ["protocol-asset"] }
 tauri-plugin-dialog = { version = "2", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "=0.6.5", optional = true }
+objc2-app-kit = { version = "=0.3.2", optional = true, default-features = false, features = ["std", "NSWindow", "NSView"] }
+objc2-foundation = { version = "=0.3.2", optional = true, default-features = false, features = ["std", "NSGeometry", "objc2-core-foundation"] }
 
 [build-dependencies]
 tauri-build = { version = "2", optional = true, features = [] }
