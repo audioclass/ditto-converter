@@ -1,5 +1,5 @@
 use ditto_app::{
-    coordinator::{Coordinator, OnlineEntry, Pipeline, Source},
+    coordinator::{Coordinator, OnlineEntry, Pipeline},
     runtime::NativePipeline,
 };
 use std::{
@@ -186,6 +186,7 @@ fn broken_optional_provider_does_not_block_real_offline_work_in_the_same_queue()
 #[cfg(unix)]
 #[test]
 fn activated_native_pipeline_forwards_acquisition_progress_then_uses_real_audio_engine() {
+    use ditto_app::coordinator::Source;
     use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new();
     let helper = f.dir.join("extractor");
