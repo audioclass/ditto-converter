@@ -1,0 +1,39 @@
+name: Bounded macOS display preflight
+
+on:
+  push:
+    branches: ['diagnostic/macos-display-preflight-20261024-a1']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-display-preflight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  display:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/diagnostic/macos-display-preflight-20261024-a1' && github.run_attempt == 1
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact diagnostic source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Inventory and at most one temporary mode switch with restoration
+        run: python3 scripts/ci/display-preflight.py
+      - name: Retain only tiny display diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos-display-preflight
+          path: |
+            display-preflight-evidence/runner.json
+            display-preflight-evidence/display.json
+            display-preflight-evidence/compile.txt
+          if-no-files-found: error
+          retention-days: 1
+          include-hidden-files: false
