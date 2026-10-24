@@ -70,6 +70,7 @@ test('workflow pins every action SHA, runner labels, budget controls and no priv
  assert.match(y,/timeout-minutes: 75/);assert.match(y,/cancel-in-progress: true/);
  assert.doesNotMatch(y,/pull_request_target|secrets\.|actions\/cache|continue-on-error|--all-features/);
  assert.match(y,/npm ci/);assert.match(y,/cargo test --workspace --features desktop --locked/);
+ assert.match(y,/cargo test --workspace --features desktop --locked --no-fail-fast -- --nocapture/,'native CI must collect all Rust target failures without masking its exit status');
  assert.match(y,/node --test .*scripts\/ci\/startup-recovery\.test\.mjs/,'CI must execute the published startup-lock contracts');
  assert.match(y,/node --test .*scripts\/ci\/ffmpeg-link\.test\.mjs/,'CI must execute the published Windows helper-link contracts');
  assert.match(y,/cargo clippy --workspace --all-targets --features desktop --locked/);

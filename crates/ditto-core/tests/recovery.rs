@@ -471,9 +471,12 @@ fn recovering_one_journal_preserves_another_owned_stage_and_existing_exports() {
     )
     .unwrap();
     let mut expected = tree_snapshot(dir.path());
+    // Journal paths are canonical (extended-length on Windows), while the
+    // fixture intentionally keeps a DOS path for exercising recovery inputs.
+    let canonical_root = dir.path().canonicalize().unwrap();
+    let first_stage_relative = first_stage.strip_prefix(&canonical_root).unwrap();
     expected.retain(|path, _| {
-        !path.starts_with(first_stage.strip_prefix(dir.path()).unwrap())
-            && path != std::path::Path::new("first.json")
+        !path.starts_with(first_stage_relative) && path != std::path::Path::new("first.json")
     });
     assert!(recover_staging(&first_journal).unwrap());
     assert_eq!(tree_snapshot(dir.path()), expected);

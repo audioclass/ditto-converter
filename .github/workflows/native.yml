@@ -153,7 +153,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --features desktop --locked -- -D warnings
       - name: Locked native Rust workspace tests including full audio corpus
         run: |
-          cargo test --workspace --features desktop --locked -- --nocapture 2>&1 | Tee-Object .work/ci/evidence/rust-tests.txt
+          cargo test --workspace --features desktop --locked --no-fail-fast -- --nocapture 2>&1 | Tee-Object .work/ci/evidence/rust-tests.txt
           exit $LASTEXITCODE
       - name: UI and packaging-contract tests
         run: |
