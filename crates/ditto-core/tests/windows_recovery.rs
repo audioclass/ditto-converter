@@ -114,6 +114,7 @@ struct Fixture {
     stage: PathBuf,
     marker: PathBuf,
     raw: PathBuf,
+    wav: PathBuf,
 }
 impl Fixture {
     fn new() -> Self {
@@ -137,11 +138,8 @@ impl Fixture {
         fs::write(&marker, &marker_name).unwrap();
         let raw = stage.join("audio.pcm");
         fs::write(&raw, b"preserve PCM").unwrap();
-        fs::write(
-            stage.join(format!(".ditto-wav-{}", "B".repeat(16))),
-            b"partial WAV",
-        )
-        .unwrap();
+        let wav = stage.join(format!(".ditto-wav-{}", "B".repeat(16)));
+        fs::write(&wav, b"partial WAV").unwrap();
         let journal = root.path().join("journal.json");
         let record = serde_json::json!({"version": 1, "stage": stage.canonicalize().unwrap(), "marker": marker_name, "wav": format!(".ditto-wav-{}", "B".repeat(16))});
         fs::write(&journal, serde_json::to_vec(&record).unwrap()).unwrap();
@@ -160,13 +158,18 @@ impl Fixture {
             stage,
             marker,
             raw,
+            wav,
         }
     }
     fn refused(&self) {
+        let before: Vec<_> = [&self.journal, &self.marker, &self.raw, &self.wav]
+            .into_iter()
+            .map(|path| (path, fs::read(path).unwrap()))
+            .collect();
         assert!(recover_staging(&self.journal).is_err());
-        assert_eq!(fs::read(&self.raw).unwrap(), b"preserve PCM");
-        assert!(self.marker.exists());
-        assert!(self.journal.exists());
+        for (path, bytes) in before {
+            assert_eq!(fs::read(path).unwrap(), bytes, "changed {}", path.display());
+        }
     }
 }
 
@@ -239,11 +242,12 @@ fn native_recovery_accepts_dos_and_extended_canonical_paths() {
 
 #[test]
 fn native_recovery_refuses_hardlinks_before_removing_anything() {
-    for target in ["journal", "marker", "raw"] {
+    for target in ["journal", "marker", "raw", "wav"] {
         let f = Fixture::new();
         let path = match target {
             "journal" => &f.journal,
             "marker" => &f.marker,
+            "wav" => &f.wav,
             _ => &f.raw,
         };
         fs::hard_link(path, f.root.path().join("outside-link")).unwrap();
@@ -261,12 +265,13 @@ fn native_recovery_refuses_untrusted_acl_grants_and_null_dacl() {
         "D:P(A;;FA;;;OW)(A;;FA;;;BA)(A;;FA;;;SY)(A;;GW;;;WD)",
         "D:NO_ACCESS_CONTROL",
     ] {
-        for target in ["journal", "stage", "marker", "raw"] {
+        for target in ["journal", "stage", "marker", "raw", "wav"] {
             let f = Fixture::new();
             let path = match target {
                 "journal" => &f.journal,
                 "stage" => &f.stage,
                 "marker" => &f.marker,
+                "wav" => &f.wav,
                 _ => &f.raw,
             };
             dacl(path, acl);
@@ -312,11 +317,12 @@ fn native_recovery_refuses_busy_writers_and_readonly_files_before_any_deletion()
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
-    for target in ["journal", "marker", "raw"] {
+    for target in ["journal", "marker", "raw", "wav"] {
         let f = Fixture::new();
         let path = match target {
             "journal" => &f.journal,
             "marker" => &f.marker,
+            "wav" => &f.wav,
             _ => &f.raw,
         };
         let writer = fs::OpenOptions::new()
@@ -336,6 +342,36 @@ fn native_recovery_refuses_busy_writers_and_readonly_files_before_any_deletion()
     f.refused();
     fs::set_permissions(&f.raw, original).unwrap();
     assert!(recover_staging(&f.journal).unwrap());
+}
+
+#[test]
+fn native_recovery_refuses_directories_in_owned_file_slots_without_recursing() {
+    for target in ["marker", "raw", "wav"] {
+        let f = Fixture::new();
+        let path = match target {
+            "marker" => &f.marker,
+            "raw" => &f.raw,
+            _ => &f.wav,
+        };
+        let moved = f.root.path().join("saved-original");
+        fs::rename(path, &moved).unwrap();
+        fs::create_dir(path).unwrap();
+        let nested = path.join("original.wav");
+        fs::write(&nested, b"nested original must survive").unwrap();
+        let before: Vec<_> = [&f.journal, &f.marker, &f.raw, &f.wav, &moved, &nested]
+            .into_iter()
+            .filter(|path| path.is_file())
+            .map(|path| (path, fs::read(path).unwrap()))
+            .collect();
+        assert!(
+            recover_staging(&f.journal).is_err(),
+            "accepted directory in {target}"
+        );
+        assert!(path.is_dir());
+        for (path, bytes) in before {
+            assert_eq!(fs::read(path).unwrap(), bytes, "changed {}", path.display());
+        }
+    }
 }
 
 #[test]

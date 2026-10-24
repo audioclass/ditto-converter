@@ -9,7 +9,19 @@ use std::{
     },
 };
 
-fn fixture(script: &str) -> (tempfile::TempDir, OnlineEngine) {
+// These tests create executable files while sibling tests spawn children. On
+// Unix a concurrent fork can inherit a still-open writer until exec closes it,
+// making a different test's immediate script spawn fail with ETXTBSY. Keep
+// generated-helper construction/execution separate within this test process;
+// production helper ownership/cancellation and every assertion stay unchanged.
+static FIXTURE_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+struct Fixture {
+    _dir: tempfile::TempDir,
+    _gate: std::sync::MutexGuard<'static, ()>,
+}
+
+fn fixture(script: &str) -> (Fixture, OnlineEngine) {
+    let gate = FIXTURE_GATE.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let helper = dir.path().join("helper");
     std::fs::write(&helper, format!("#!/bin/sh\n{script}\n")).unwrap();
@@ -20,7 +32,13 @@ fn fixture(script: &str) -> (tempfile::TempDir, OnlineEngine) {
         work_dir: dir.path().join("work"),
         ffmpeg_dir: PathBuf::from("/managed/audio"),
     };
-    (dir, engine)
+    (
+        Fixture {
+            _dir: dir,
+            _gate: gate,
+        },
+        engine,
+    )
 }
 
 #[test]
@@ -67,7 +85,7 @@ sleep 1
         cancel.store(true, Ordering::SeqCst);
     });
     assert!(result.is_err());
-    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.len(), 1, "callback cancellation result: {result:?}");
 }
 
 #[test]

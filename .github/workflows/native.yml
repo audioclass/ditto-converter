@@ -159,7 +159,7 @@ jobs:
         run: |
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs scripts/ci/notices.test.mjs scripts/ci/remediation.test.mjs scripts/ci/remediation-package.test.mjs
+          node --test scripts/verify-bundle.test.mjs scripts/ci/native.test.mjs scripts/ci/smoke.test.mjs scripts/ci/notices.test.mjs scripts/ci/remediation.test.mjs scripts/ci/remediation-package.test.mjs scripts/ci/ffmpeg-link.test.mjs scripts/ci/startup-recovery.test.mjs
           exit $LASTEXITCODE
       - name: Exact dependency reconstruction regressions
         run: |

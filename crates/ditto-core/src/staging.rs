@@ -173,6 +173,13 @@ pub fn recover_staging(journal_path: &Path) -> Result<bool> {
     };
     validate_file(&metadata, true)?;
     exact_path(journal_path)?;
+    // Registration requires private journal storage. Recheck it at recovery:
+    // a once-private parent may have become readable or writable by others.
+    let absolute = journal_path.canonicalize()?;
+    let parent = absolute
+        .parent()
+        .ok_or_else(|| Error::Invalid("journal requires a parent directory".into()))?;
+    validate_directory(&fs::symlink_metadata(parent)?, true)?;
     if metadata.len() > LIMIT {
         return Err(Error::Invalid("invalid staging journal".into()));
     }

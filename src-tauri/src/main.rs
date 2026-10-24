@@ -169,19 +169,7 @@ async fn import_url(url: String, s: State<'_, AppState>) -> Result<(), String> {
     let q = s.queue.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
-        let mut admission_error = None;
-        let outcome = engine.enumerate_stream(&url, &c, |entry| {
-            if admission_error.is_none() {
-                if let Err(e) = q.add_online(vec![mapped(entry)]) {
-                    admission_error = Some(e);
-                    c.store(true, Ordering::SeqCst);
-                }
-            }
-        });
-        if let Some(error) = admission_error {
-            return Err(error);
-        }
-        outcome.map_err(|e| e.to_string())
+        import_metadata(&engine, &url, &c, &q)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -391,6 +379,44 @@ fn smoke_report(
     );
     Ok(())
 }
+// Keep the blocking command and its streaming callback on the same tested path.
+fn import_metadata(
+    engine: &ditto_online::OnlineEngine,
+    url: &str,
+    c: &Arc<AtomicBool>,
+    q: &Coordinator,
+) -> Result<(), String> {
+    let mut admission_error = None;
+    let outcome = engine.enumerate_stream(url, c, |entry| {
+        if admission_error.is_none() {
+            if let Err(e) = q.add_online(vec![mapped(entry)]) {
+                admission_error = Some(e);
+                c.store(true, Ordering::SeqCst);
+            }
+        }
+    });
+    if let Some(error) = admission_error {
+        return Err(error);
+    }
+    outcome.map_err(|e| e.to_string())
+}
+
+fn publish_snapshot<E>(
+    queue: &Coordinator,
+    old: &mut String,
+    mut emit: impl FnMut(Snapshot) -> Result<(), E>,
+) {
+    let snapshot = queue.snapshot();
+    let new = serde_json::to_string(&snapshot).unwrap_or_default();
+    if new != *old && emit(snapshot).is_ok() {
+        *old = new;
+    }
+}
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -476,12 +502,9 @@ fn main() {
             std::thread::spawn(move || {
                 let mut old = String::new();
                 loop {
-                    let snapshot = queue.snapshot();
-                    let new = serde_json::to_string(&snapshot).unwrap_or_default();
-                    if new != old {
-                        let _ = handle.emit("queue-changed", snapshot);
-                        old = new;
-                    }
+                    publish_snapshot(&queue, &mut old, |snapshot| {
+                        handle.emit("queue-changed", snapshot)
+                    });
                     std::thread::sleep(Duration::from_millis(150));
                 }
             });
