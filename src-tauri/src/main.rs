@@ -360,6 +360,42 @@ fn open_output(s: State<'_, AppState>) -> Result<(), String> {
 }
 #[cfg(feature = "smoke")]
 #[tauri::command]
+fn smoke_window(
+    size: Option<(f64, f64)>,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("Main window missing")?;
+    if let Some((width, height)) = size {
+        // Opt-in native tests only: exercise actual short client viewports,
+        // including sizes below the ordinary production minimum.
+        window
+            .set_min_size(Some(tauri::LogicalSize::new(1., 1.)))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
+    }
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let outer = window.outer_size().map_err(|e| e.to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or("Monitor missing")?;
+    let work = monitor.work_area();
+    Ok(serde_json::json!({
+        "outer": [position.x, position.y, outer.width, outer.height],
+        "work": [work.position.x, work.position.y, work.size.width, work.size.height],
+        "fits": i64::from(position.x) >= i64::from(work.position.x)
+            && i64::from(position.y) >= i64::from(work.position.y)
+            && i64::from(position.x)+i64::from(outer.width) <= i64::from(work.position.x)+i64::from(work.size.width)
+            && i64::from(position.y)+i64::from(outer.height) <= i64::from(work.position.y)+i64::from(work.size.height)
+    }))
+}
+
+#[cfg(feature = "smoke")]
+#[tauri::command]
 fn smoke_report(
     report: serde_json::Value,
     app: tauri::AppHandle,
@@ -417,6 +453,60 @@ fn publish_snapshot<E>(
 #[path = "main_tests.rs"]
 mod tests;
 
+fn fit_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("Main window missing")?;
+    if let Some(monitor) = window.current_monitor()?.or(window.primary_monitor()?) {
+        let config = app
+            .config()
+            .app
+            .windows
+            .iter()
+            .find(|w| w.label == "main")
+            .ok_or("Main window configuration missing")?;
+        let outer = window.outer_size()?;
+        let inner = window.inner_size()?;
+        let work = monitor.work_area().size;
+        let fit = ditto_app::window_fit::fit_window(
+            (config.width, config.height),
+            (
+                config.min_width.unwrap_or(0.),
+                config.min_height.unwrap_or(0.),
+            ),
+            (work.width, work.height),
+            (
+                outer.width.saturating_sub(inner.width),
+                outer.height.saturating_sub(inner.height),
+            ),
+            window.scale_factor()?,
+        );
+        window.set_min_size(Some(tauri::LogicalSize::new(fit.minimum.0, fit.minimum.1)))?;
+        let size = tauri::LogicalSize::new(fit.inner.0, fit.inner.1);
+        let physical = size.to_physical::<u32>(window.scale_factor()?);
+        window.set_size(size)?;
+        // set_size may be deferred (GTK). Center the requested decorated size,
+        // not the still-hidden window's stale pre-map geometry.
+        let origin = monitor.work_area().position;
+        window.set_position(tauri::PhysicalPosition::new(
+            origin.x
+                + (work
+                    .width
+                    .saturating_sub(physical.width)
+                    .saturating_sub(outer.width.saturating_sub(inner.width))
+                    / 2) as i32,
+            origin.y
+                + (work
+                    .height
+                    .saturating_sub(physical.height)
+                    .saturating_sub(outer.height.saturating_sub(inner.height))
+                    / 2) as i32,
+        ))?;
+    }
+    window.show()?;
+    Ok(())
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -429,7 +519,8 @@ fn main() {
                 ) {
                     let config = serde_json::json!({"input":input,"output":output,"online":std::env::var("DITTO_SMOKE_ONLINE").as_deref()==Ok("1")});
                     let script = include_str!("../../scripts/native-smoke.js")
-                        .replace("__SMOKE_CONFIG__", &config.to_string());
+                        .replace("__SMOKE_CONFIG__", &config.to_string())
+                        .replace("__LAYOUT_RUNNER__", &include_str!("../../ui/tests/layout-smoke-runner.js").replace("export function", "function"));
                     let _ = webview.eval(script);
                 }
             }
@@ -508,13 +599,14 @@ fn main() {
                     std::thread::sleep(Duration::from_millis(150));
                 }
             });
+            fit_main_window(app)?;
             Ok(())
         })
         .invoke_handler(|invoke| {
             #[cfg(feature = "smoke")]
-            if invoke.message.command() == "smoke_report" {
+            if matches!(invoke.message.command(), "smoke_report" | "smoke_window") {
                 let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
-                    tauri::generate_handler![smoke_report];
+                    tauri::generate_handler![smoke_report, smoke_window];
                 return handler(invoke);
             }
             let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![

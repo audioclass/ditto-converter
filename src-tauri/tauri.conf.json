@@ -10,7 +10,7 @@
     "frontendDist": "../ui/dist"
   },
   "app": {
-    "windows": [{"label":"main", "title":"Ditto Converter", "width":1080, "height":760, "minWidth":780, "minHeight":600, "center":true, "preventOverflow":{"width":32,"height":32}, "dragDropEnabled":true}],
+    "windows": [{"label":"main", "title":"Ditto Converter", "width":1080, "height":760, "minWidth":780, "minHeight":600, "visible":false, "center":true, "preventOverflow":{"width":32,"height":32}, "dragDropEnabled":true}],
     "security": {
       "csp":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' asset: http://asset.localhost blob:; connect-src ipc: http://ipc.localhost asset: http://asset.localhost; object-src 'none'; frame-src 'none'; base-uri 'self'",
       "assetProtocol":{"enable":true,"scope":[]}

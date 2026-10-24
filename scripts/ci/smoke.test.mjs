@@ -49,6 +49,8 @@ test('required checks stay aligned with the real embedded offline smoke script',
   const {requiredChecks}=await import('./smoke.mjs');
   const script=readFileSync(new URL('../native-smoke.js',import.meta.url),'utf8').split('if(cfg.online)')[0];
   const actual=[...script.matchAll(/\bcheck\('([^']+)'/g)].map(match=>match[1]);
+  const nativeSizes = JSON.parse(script.match(/for \(const \[width,height\] of (\[\[.*?\]\])\)/)[1]);
+  actual.push(...nativeSizes.map(([width,height])=>`actual native ${width}x${height} crowded/error/footer layout`));
   assert.deepEqual(requiredChecks,actual);
 });
 
@@ -76,6 +78,10 @@ test('report validation requires every existing offline native harness check', a
   assert.throws(()=>validateReport({...report, passed:false}), /failed/);
   assert.throws(()=>validateReport({...report, checks:[...report.checks,{name:'extra',ok:false}]}), /failed/);
   assert.throws(()=>validateReport({...report, output:undefined}), /output/);
+  for (const name of requiredChecks) {
+    assert.throws(()=>validateReport({...report,checks:report.checks.filter(c=>c.name!==name)}), /Missing/);
+    assert.throws(()=>validateReport({...report,checks:[...report.checks,{name,ok:true}]}), /duplicate/);
+  }
 });
 
 function wav({extensible=false, junk=true}={}) {

@@ -3,6 +3,7 @@
   if (window.__dittoSmokeStarted) return;
   window.__dittoSmokeStarted = true;
   const cfg = __SMOKE_CONFIG__;
+  __LAYOUT_RUNNER__
   const invoke = window.__TAURI_INTERNALS__.invoke;
   const checks = [];
   const policyViolations=[];
@@ -13,6 +14,8 @@
     await delay(500);
     check('bundled UI rendered', document.body.innerText.includes('Your queue'), document.title);
     check('native bridge active', !document.body.innerText.includes('Desktop preview only'), true);
+    const startupGeometry = await invoke('smoke_window', {size:null});
+    check('native startup outer window fits workarea', startupGeometry.fits, startupGeometry);
     await invoke('set_output_dir', {path: cfg.output});
     await invoke('add_files', {paths: [cfg.input]});
     let s = await invoke('snapshot');
@@ -110,6 +113,26 @@
       await delay(50);
       layout = measure();
       check('error banner preserves footer', layout.footerBottom<=layout.rootBottom+1&&layout.queueBottom<=layout.footerTop+1&&!layout.footerHits.length, layout);
+      // Keep the original container assertions above, then exercise real native
+      // client resizing. CSS media queries must see these actual viewport sizes.
+      appRoot.style.height = previousHeight;
+      appRoot.style.flex = previousFlex;
+      document.querySelector('.track-info').click();
+      document.getElementById('trim-start').value = '99:00';
+      document.getElementById('trim-end').value = '1';
+      document.getElementById('trim-form').requestSubmit();
+      check('native layout fixture has genuine trim validation error', !!document.getElementById('trim-error').textContent, document.getElementById('trim-error').textContent);
+      for (const [width,height] of [[780,420],[856,420],[780,480],[872,480],[780,600],[1080,760]]) {
+        await invoke('smoke_window', {size:[width,height]});
+        const resizing = Date.now();
+        while(innerWidth!==width || innerHeight!==height) {
+          if(Date.now()-resizing>3000)throw new Error(`native viewport resize ${width}x${height}: ${innerWidth}x${innerHeight}`);
+          await delay(25);
+        }
+        await delay(50);
+        const nativeLayout = measureLayout();
+        check(`actual native ${width}x${height} crowded/error/footer layout`, Object.values(nativeLayout.checks).every(Boolean), nativeLayout);
+      }
     } finally {
       appRoot.style.height = previousHeight;
       appRoot.style.flex = previousFlex;

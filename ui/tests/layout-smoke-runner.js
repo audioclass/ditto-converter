@@ -30,7 +30,26 @@ export function measureLayout() {
     footerFullyVisible: f.top >= 0 && f.bottom <= innerHeight + 1 && f.right <= innerWidth + 1,
     noDocumentOverflow: document.documentElement.scrollHeight <= innerHeight + 1 && document.documentElement.scrollWidth <= innerWidth + 1,
   };
+  if (rows) {
+    const row = document.querySelector('.queue-row');
+    // The column heading scrolls with the queue, not as a sticky header. A
+    // complete row must fit after scrolling it into view; do not reserve the
+    // heading again (that would incorrectly reject the ordinary 600px layout).
+    checks.queueHasUsableViewport = q.height >= Math.min(box(row).height, 78);
+  }
   if (rows >= 11) checks.queueScrollsIndependently = queueScroll > 0;
+  const inspectorBefore = inspector.scrollTop;
+  inspector.scrollTop = inspector.scrollHeight;
+  const inspectorScroll = inspector.scrollTop;
+  inspector.scrollTop = inspectorBefore;
+  checks.inspectorScrollDoesNotMoveFooter = Math.abs(box(footer).top - f.top) < 1;
+  if (inspector.scrollHeight > inspector.clientHeight + 1) checks.inspectorScrollsIndependently = inspectorScroll > 0;
+  for (const id of ['choose-folder', 'convert']) {
+    const button = document.getElementById(id), r = box(button);
+    checks[`${id}HitTargetVisible`] = r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth
+      && [[r.left + 4, r.top + 4], [r.right - 4, r.bottom - 4], [(r.left + r.right) / 2, (r.top + r.bottom) / 2]]
+        .every(([x, y]) => document.elementFromPoint(x, y)?.closest('button') === button);
+  }
   return { viewport: { width: innerWidth, height: innerHeight }, rows, checks, main: m, workspace: w, queue: q, footer: f, inspector: box(inspector), banner: box(banner), queueScroll, footerHits };
 }
 

@@ -8,12 +8,15 @@ import {fileURLToPath} from 'node:url';
 import {prepareRemediation} from '../prepare-remediation.mjs';
 
 export const requiredChecks = [
-  'bundled UI rendered', 'native bridge active', 'metadata probe entered queue',
+  'bundled UI rendered', 'native bridge active', 'native startup outer window fits workarea', 'metadata probe entered queue',
   'real snapshot rendered in UI', 'selection update preserves trim end',
   'explicit null resets end boundary', 'scoped asset returns WAV bytes',
   'scoped decoded preview loads', 'native webview seek', 'real helper export completed',
   'completed row selection preserves export', 'exact-target queue removal',
   'crowded queue scroll stays inside workspace', 'error banner preserves footer',
+  'native layout fixture has genuine trim validation error',
+  ...[[780,420],[856,420],[780,480],[872,480],[780,600],[1080,760]]
+    .map(([width,height])=>`actual native ${width}x${height} crowded/error/footer layout`),
 ];
 export function validateReport(report) {
   if (!report || report.passed !== true || !Array.isArray(report.checks) || report.checks.some(c => !c || c.ok !== true)) {

@@ -16,6 +16,10 @@ test('main window centers within the workarea after startup overflow fitting', (
 test('main window opts into startup workarea fitting without weakening its size constraints', () => {
   const main = config.app.windows.find((window: { label: string }) => window.label === 'main');
   assert.ok(main, 'the main native window must be configured');
+  // Preserve configured ordinary minima; the native setup caps them only when
+  // the actual decorated workarea is smaller. Hidden startup prevents a flash
+  // of the backend's minimum-clamped oversized window before that adjustment.
+  assert.equal(main.visible, false, 'fit native minimum/size/position before first show');
   // Tauri excludes Windows side/bottom shadows from its overflow size calculation.
   // Reserve a total 32 physical pixels per axis, not a per-edge or logical margin.
   assert.deepEqual(main.preventOverflow, { width: 32, height: 32 },
