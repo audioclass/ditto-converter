@@ -95,6 +95,39 @@ pub fn immediate_snapshot(window: tauri::WebviewWindow) -> Result<Value, String>
         .map_err(|e| format!("Immediate native geometry snapshot unavailable: {e}"))?
 }
 
+// Convert fixture viewport points, not runtime `inner_size` points. With the
+// pinned opaque/full-size titlebar, WebKit reserves contentLayoutRect's inset.
+// Reuse the bounded main-thread snapshot; never guess a titlebar constant.
+pub fn viewport_content_size(
+    window: tauri::WebviewWindow,
+    viewport: (f64, f64),
+) -> Result<(f64, f64), String> {
+    let snapshot = immediate_snapshot(window)?;
+    let observation = &snapshot["observation"];
+    let dimensions = |key: &str| -> Result<(f64, f64), String> {
+        let width = observation[key][2].as_f64().ok_or("Missing native width")?;
+        let height = observation[key][3]
+            .as_f64()
+            .ok_or("Missing native height")?;
+        if !width.is_finite() || !height.is_finite() || width <= 0. || height <= 0. {
+            return Err("Invalid native content geometry".into());
+        }
+        Ok((width, height))
+    };
+    let content = dimensions("contentViewBounds")?;
+    let layout = dimensions("contentLayoutRect")?;
+    if layout.0 > content.0 || layout.1 > content.1 {
+        return Err("Native layout exceeds content bounds".into());
+    }
+    let request = super::smoke_viewport::content_size(viewport, content, layout);
+    event(
+        "helper-viewport-content-request",
+        json!({"viewportLogical":viewport,
+        "contentLogical":content,"layoutLogical":layout,"requestLogical":request}),
+    );
+    Ok(request)
+}
+
 pub async fn snapshot(window: tauri::WebviewWindow) -> Result<Value, String> {
     let receive = enqueue_snapshot(window)?;
     // Only a blocking-pool thread waits. The main thread remains free to run

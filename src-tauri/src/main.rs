@@ -17,6 +17,8 @@ use tauri::{Emitter, Manager, State};
 
 #[cfg(all(feature = "smoke", target_os = "macos"))]
 mod smoke_geometry;
+#[cfg(all(feature = "smoke", target_os = "macos"))]
+mod smoke_viewport;
 
 struct AppState {
     queue: Coordinator,
@@ -392,6 +394,9 @@ fn smoke_window(
             "helper-minimum-returned",
             serde_json::json!({"logical":[1.,1.]}),
         );
+        #[cfg(all(feature = "smoke", target_os = "macos"))]
+        let (width, height) =
+            smoke_geometry::viewport_content_size(window.clone(), (width, height))?;
         #[cfg(all(feature = "smoke", target_os = "macos"))]
         smoke_geometry::event(
             "helper-size-request",
