@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,existsSync} from 'node:fs';
+import {readFileSync,existsSync,mkdirSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const swift=()=>readFileSync(new URL('./display-smoke.swift',import.meta.url),'utf8');
+// Structural source contracts ignore checkout EOLs; provenance hashes use raw bytes.
+const readText=(path)=>readFileSync(path,'utf8').replace(/\r\n/g,'\n');
+const swift=()=>readText(new URL('./display-smoke.swift',import.meta.url));
 test('Swift has no second cleanup signal owner or blocking child wait',()=>{
   assert.doesNotMatch(swift(),/\b(?:kill|killpg|terminate|waitUntilExit)\s*\(/,
     'only Python supervisors may signal owned children; Swift must restore and return');
@@ -57,17 +60,56 @@ test('known terminal nonzero supervisor status is retained only after fresh stop
 test('cancellation delivered during deferred restoration cannot retain success',()=>{
   assert.match(swift(),/experiment\(\)\nreport\["finalScreens"\] = screensRecord\(\)\nif interrupted \{[\s\S]*?exitCode = 1[\s\S]*?\n\}\ncheckpoint\(\)/);
 });
+test('structural contracts accept LF and CRLF but reject a missing cancellation guard',async(t)=>{
+  const source=readFileSync(new URL('./display-smoke.swift',import.meta.url),'utf8').replace(/\r\n/g,'\n');
+  const workflow=readFileSync(new URL('../../.github/workflows/native.yml',import.meta.url),'utf8').replace(/\r\n/g,'\n');
+  const start=source.lastIndexOf('\nif interrupted {');
+  const end=source.indexOf('\ncheckpoint()',start);
+  assert.ok(start>=0 && end>start,'missing final cancellation guard fixture');
+  const withoutGuard=source.slice(0,start)+source.slice(end);
+  const parent=join(root,'.work');
+  mkdirSync(parent,{recursive:true});
+  const fixture=mkdtempSync(join(parent,'display-contract-'));
+  try {
+    mkdirSync(join(fixture,'scripts','ci'),{recursive:true});
+    mkdirSync(join(fixture,'.github','workflows'),{recursive:true});
+    const testPath=join(fixture,'scripts','ci','display-smoke.test.mjs');
+    writeFileSync(testPath,readFileSync(fileURLToPath(import.meta.url)));
+    for(const [label,eol] of [['LF','\n'],['CRLF','\r\n']]) {
+      writeFileSync(join(fixture,'.github','workflows','native.yml'),workflow.replace(/\n/g,eol));
+      for(const [state,text,expected] of [['intact',source,0],['removed',withoutGuard,1]]) {
+        await t.test(`${label} ${state}`,()=>{
+          writeFileSync(join(fixture,'scripts','ci','display-smoke.swift'),text.replace(/\n/g,eol));
+          // Execute the actual assertions, not a weaker duplicate; the exact
+          // name pattern excludes this fixture-spawning regression recursively.
+          const env={...process.env};
+          delete env.NODE_TEST_CONTEXT;
+          const r=spawnSync(process.execPath,['--test','--test-reporter=tap','--test-name-pattern=^(cancellation delivered during deferred restoration cannot retain success|workflow only wraps macOS, invokes portable tests, keeps existing upload roots)$',testPath],{cwd:fixture,env,encoding:'utf8',timeout:10000});
+          assert.ifError(r.error);
+          assert.equal(r.status,expected,r.stdout+r.stderr);
+          if(expected!==0) {
+            assert.match(r.stdout+r.stderr,/not ok \d+ - cancellation delivered during deferred restoration cannot retain success/);
+            assert.match(r.stdout+r.stderr,/AssertionError/);
+          }
+          assert.match(r.stdout,/\nok \d+ - workflow only wraps macOS/);
+        });
+      }
+    }
+  } finally {
+    rmSync(fixture,{recursive:true,force:true});
+  }
+});
 test('macOS wrapper lives across actual smoke child and restores the exact object',()=>{
   const path=new URL('./display-smoke.swift',import.meta.url);
   assert.ok(existsSync(path),'missing same-caller wrapper');
-  const s=readFileSync(path,'utf8');
+  const s=readText(path);
   assert.match(s,/defer \{/);assert.match(s,/CGDisplaySetDisplayMode\(display, original, nil\)/);
   assert.match(s,/while child.isRunning/);assert.match(s,/pump\(0.05\)/);
   assert.doesNotMatch(s,/waitUntilExit/);assert.match(s,/nativeFit\(\)/);
   assert.match(s,/sameMode\(actual, chosen\)/);assert.match(s,/switchAttempts.*= 1/);
 });
 test('workflow only wraps macOS, invokes portable tests, keeps existing upload roots',()=>{
-  const w=readFileSync(new URL('../../.github/workflows/native.yml',import.meta.url),'utf8');
+  const w=readText(new URL('../../.github/workflows/native.yml',import.meta.url));
   assert.match(w,/if: runner.os == 'Windows'\n        run: node scripts\/ci\/smoke.mjs/);
   assert.match(w,/if: runner.os == 'macOS'\n        timeout-minutes: 45\n        run: python scripts\/ci\/display-smoke.py/);
   assert.match(w,/node --test[^\n]*scripts\/ci\/display-smoke.test.mjs/);
